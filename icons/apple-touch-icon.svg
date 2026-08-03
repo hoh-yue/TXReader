@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <rect width="180" height="180" rx="38" fill="#f4eddf"/>
+  <rect x="45" y="25" width="90" height="130" rx="8" fill="#a74431"/>
+  <text x="90" y="85" text-anchor="middle" font-family="serif" font-size="38" fill="#fff8eb">拾</text>
+  <text x="90" y="130" text-anchor="middle" font-family="serif" font-size="38" fill="#fff8eb">页</text>
+</svg>

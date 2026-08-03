@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4eddf" />
+    <meta name="description" content="一个轻巧、离线可用的中文 TXT 阅读器" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>拾页 · 中文阅读器</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <button class="icon-button" id="libraryButton" aria-label="打开书架">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16M4 12h16M4 18.5h16"/></svg>
+        </button>
+        <div class="book-heading">
+          <strong id="bookTitle">拾页</strong>
+          <span id="chapterTitle">你的随身中文阅读器</span>
+        </div>
+        <button class="icon-button" id="settingsButton" aria-label="阅读设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
+        </button>
+      </header>
+
+      <main id="reader" class="reader" tabindex="0">
+        <section id="welcome" class="welcome">
+          <div class="seal" aria-hidden="true">拾<br/>页</div>
+          <p class="eyebrow">离线 · 私密 · 专注</p>
+          <h1>把喜欢的文字<br/>装进口袋</h1>
+          <p class="welcome-copy">上传 TXT 文件，自动识别章节。阅读进度只保存在你的设备中。</p>
+          <label class="primary-button" for="fileInput">选择 TXT 文件</label>
+          <input id="fileInput" type="file" accept=".txt,text/plain" hidden />
+          <p class="file-tip">支持 UTF-8 与 GB18030 编码</p>
+        </section>
+
+        <article id="readingView" class="reading-view" hidden>
+          <div id="pageText" class="page-text"></div>
+          <button id="tapPrevious" class="tap-zone tap-zone-left" aria-label="上一页"></button>
+          <button id="tapNext" class="tap-zone tap-zone-right" aria-label="下一页"></button>
+        </article>
+      </main>
+
+      <footer id="readingFooter" class="reading-footer" hidden>
+        <button id="prevPage" class="page-button" aria-label="上一页">上一页</button>
+        <div class="progress-wrap">
+          <span id="progressText">0 / 0</span>
+          <div class="progress-track"><i id="progressBar"></i></div>
+        </div>
+        <button id="nextPage" class="page-button" aria-label="下一页">下一页</button>
+      </footer>
+    </div>
+
+    <div id="scrim" class="scrim" hidden></div>
+
+    <aside id="libraryPanel" class="panel panel-left" aria-hidden="true">
+      <div class="panel-header">
+        <div><span class="eyebrow">LIBRARY</span><h2>书架</h2></div>
+        <button class="close-button" data-close aria-label="关闭">×</button>
+      </div>
+      <label class="outline-button" for="fileInput">＋ 导入新书</label>
+      <div id="bookList" class="book-list"></div>
+      <div id="chapterSection" class="chapter-section" hidden>
+        <div class="section-label">目录</div>
+        <nav id="chapterList" class="chapter-list"></nav>
+      </div>
+    </aside>
+
+    <aside id="settingsPanel" class="panel panel-right" aria-hidden="true">
+      <div class="panel-header">
+        <div><span class="eyebrow">DISPLAY</span><h2>阅读设置</h2></div>
+        <button class="close-button" data-close aria-label="关闭">×</button>
+      </div>
+      <section class="setting-block">
+        <label>文字大小</label>
+        <div class="font-control">
+          <button id="fontDown" aria-label="缩小文字">字－</button>
+          <output id="fontSizeValue">20</output>
+          <button id="fontUp" aria-label="放大文字">字＋</button>
+        </div>
+      </section>
+      <section class="setting-block">
+        <label>阅读背景</label>
+        <div id="themeChoices" class="theme-choices">
+          <button data-theme="paper" class="theme-dot paper active" aria-label="米白"></button>
+          <button data-theme="white" class="theme-dot white" aria-label="纯白"></button>
+          <button data-theme="green" class="theme-dot green" aria-label="护眼绿"></button>
+          <button data-theme="night" class="theme-dot night" aria-label="夜间"></button>
+        </div>
+      </section>
+      <section class="setting-block">
+        <label for="encodingSelect">文本编码</label>
+        <select id="encodingSelect">
+          <option value="auto">自动识别</option>
+          <option value="utf-8">UTF-8</option>
+          <option value="gb18030">GB18030 / GBK</option>
+        </select>
+        <p class="setting-note">若文字显示乱码，请切换编码后重新导入。</p>
+      </section>
+    </aside>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

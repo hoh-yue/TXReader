@@ -1,0 +1,15 @@
+{
+  "name": "拾页 · 中文阅读器",
+  "short_name": "拾页",
+  "description": "离线、私密的中文 TXT 阅读器",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4eddf",
+  "theme_color": "#f4eddf",
+  "icons": [
+    { "src": "./icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
