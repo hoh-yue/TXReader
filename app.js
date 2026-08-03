@@ -64,7 +64,7 @@ function cleanText(text) {
 function findChapters(text) {
   const heading = /^(?:\s{0,4})(第[零〇一二两三四五六七八九十百千万0-9]{1,12}[章节卷回部篇集][^\n]{0,30}|(?:序章|楔子|引子|前言|后记|尾声|番外)(?:[^\n]{0,24}))\s*$/gm;
   const found = [...text.matchAll(heading)].map((match) => ({ title: match[1].trim(), start: match.index }));
-  if (!found.length || found[0].start > 0) found.unshift({ title: "正文", start: 0 });
+  if (!found.length || found[0].start > 0) found.unshift({ title: "正文", start: 0, synthetic: true });
   return found.map((item, index) => ({ ...item, end: found[index + 1]?.start ?? text.length }));
 }
 
@@ -77,21 +77,63 @@ function safeTextBoundary(text, offset) {
   return safe;
 }
 
+function chapterAtStart(offset) {
+  return state.chapters.find(chapter => chapter.start === offset && !chapter.synthetic);
+}
+
+function chapterBodyStart(chapter) {
+  if (!chapter) return null;
+  const text = state.current.text;
+  const headingEnd = text.indexOf("\n", chapter.start);
+  if (headingEnd < 0 || headingEnd >= chapter.end) return chapter.end;
+
+  const normalizedTitle = chapter.title.replace(/\s+/g, "").toLowerCase();
+  let cursor = headingEnd + 1;
+  while (cursor < chapter.end) {
+    const nextBreak = text.indexOf("\n", cursor);
+    const lineEnd = nextBreak < 0 || nextBreak > chapter.end ? chapter.end : nextBreak;
+    const line = text.slice(cursor, lineEnd).trim();
+    const normalizedLine = line.replace(/\s+/g, "").toLowerCase();
+    if (line && normalizedLine !== normalizedTitle) break;
+    cursor = lineEnd < chapter.end ? lineEnd + 1 : lineEnd;
+  }
+  return cursor;
+}
+
+function setPageContent(start, end) {
+  const text = state.current.text;
+  const chapter = chapterAtStart(start);
+  if (!chapter) {
+    ui.pageText.textContent = text.slice(start, end);
+    return;
+  }
+  const title = document.createElement("h2");
+  title.className = "chapter-page-title";
+  title.textContent = chapter.title;
+  const body = document.createElement("span");
+  body.textContent = text.slice(chapterBodyStart(chapter), end);
+  ui.pageText.replaceChildren(title, body);
+}
+
 function fitCurrentPage(start) {
   const text = state.current.text;
   const pageStart = safeTextBoundary(text, start);
+  const nextChapter = state.chapters.find(chapter => chapter.start > pageStart);
+  const sectionEnd = nextChapter?.start ?? text.length;
   const firstCodePoint = text.codePointAt(pageStart);
-  const minimumEnd = Math.min(text.length, pageStart + (firstCodePoint > 0xffff ? 2 : 1));
+  const chapter = chapterAtStart(pageStart);
+  const firstCharacterEnd = Math.min(text.length, pageStart + (firstCodePoint > 0xffff ? 2 : 1));
+  const minimumEnd = Math.min(sectionEnd, Math.max(firstCharacterEnd, chapterBodyStart(chapter) ?? firstCharacterEnd));
   const fits = (end) => {
-    ui.pageText.textContent = text.slice(pageStart, safeTextBoundary(text, end));
+    setPageContent(pageStart, safeTextBoundary(text, end));
     return ui.pageText.scrollHeight <= ui.pageText.clientHeight + 1;
   };
 
   let lower = pageStart;
-  let upper = Math.min(text.length, pageStart + 1800);
-  while (upper < text.length && fits(upper)) {
+  let upper = Math.min(sectionEnd, pageStart + 1800);
+  while (upper < sectionEnd && fits(upper)) {
     lower = upper;
-    upper = Math.min(text.length, pageStart + (upper - pageStart) * 2);
+    upper = Math.min(sectionEnd, pageStart + (upper - pageStart) * 2);
   }
 
   let best = lower;
@@ -107,8 +149,8 @@ function fitCurrentPage(start) {
   }
 
   // Extremely small/hidden viewports still need to make forward progress.
-  const end = Math.max(minimumEnd, safeTextBoundary(text, best));
-  ui.pageText.textContent = text.slice(pageStart, end);
+  const end = Math.min(sectionEnd, Math.max(minimumEnd, safeTextBoundary(text, best)));
+  setPageContent(pageStart, end);
   return end;
 }
 
@@ -128,8 +170,11 @@ async function renderPage(save = true) {
   if (!state.current) return;
   const offset = state.pageStart;
   state.chapterIndex = Math.max(0, state.chapters.findLastIndex(ch => ch.start <= offset));
+  const currentChapter = state.chapters[state.chapterIndex];
+  const isChapterOpening = Boolean(chapterAtStart(offset));
   ui.bookTitle.textContent = state.current.title;
-  ui.chapterTitle.textContent = state.chapters[state.chapterIndex]?.title || "正文";
+  ui.chapterTitle.textContent = currentChapter?.title || "正文";
+  ui.chapterTitle.hidden = isChapterOpening;
   const percent = Math.min(100, Math.round((state.pageEnd / Math.max(1, state.current.text.length)) * 100));
   ui.progressText.textContent = `第 ${Math.max(1, state.page)} 页 · ${percent}%`;
   ui.progressBar.style.width = `${percent}%`;
