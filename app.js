@@ -8,7 +8,7 @@ const ui = {
   fileInput: $("fileInput"), welcome: $("welcome"), readingView: $("readingView"),
   pageText: $("pageText"), footer: $("readingFooter"), bookTitle: $("bookTitle"),
   chapterTitle: $("chapterTitle"), prev: $("prevPage"), next: $("nextPage"),
-  progressText: $("progressText"), progressBar: $("progressBar"), bookList: $("bookList"),
+  progressText: $("progressText"), progressBar: $("progressBar"), bookList: $("homeBookList"), emptyShelf: $("emptyShelf"),
   chapterList: $("chapterList"), chapterSection: $("chapterSection"), scrim: $("scrim"),
   libraryPanel: $("libraryPanel"), settingsPanel: $("settingsPanel"), toast: $("toast"),
   fontValue: $("fontSizeValue"), encoding: $("encodingSelect")
@@ -44,6 +44,7 @@ async function dbAction(mode, callback) {
 
 const getBooks = () => dbAction("readonly", store => store.getAll());
 const saveBook = (book) => dbAction("readwrite", store => store.put(book));
+const deleteBook = (id) => dbAction("readwrite", store => store.delete(id));
 
 function persistSettings() {
   localStorage.setItem(STATE_KEY, JSON.stringify({ fontSize: state.fontSize, theme: state.theme, encoding: state.encoding, currentId: state.current?.id }));
@@ -64,7 +65,7 @@ function cleanText(text) {
 function findChapters(text) {
   const heading = /^(?:\s{0,4})(第[零〇一二两三四五六七八九十百千万0-9]{1,12}[章节卷回部篇集][^\n]{0,30}|(?:序章|楔子|引子|前言|后记|尾声|番外)(?:[^\n]{0,24}))\s*$/gm;
   const found = [...text.matchAll(heading)].map((match) => ({ title: match[1].trim(), start: match.index }));
-  if (!found.length || found[0].start > 0) found.unshift({ title: "正文", start: 0 });
+  if (!found.length || found[0].start > 0) found.unshift({ title: "正文", start: 0, synthetic: true });
   return found.map((item, index) => ({ ...item, end: found[index + 1]?.start ?? text.length }));
 }
 
@@ -77,21 +78,63 @@ function safeTextBoundary(text, offset) {
   return safe;
 }
 
+function chapterAtStart(offset) {
+  return state.chapters.find(chapter => chapter.start === offset && !chapter.synthetic);
+}
+
+function chapterBodyStart(chapter) {
+  if (!chapter) return null;
+  const text = state.current.text;
+  const headingEnd = text.indexOf("\n", chapter.start);
+  if (headingEnd < 0 || headingEnd >= chapter.end) return chapter.end;
+
+  const normalizedTitle = chapter.title.replace(/\s+/g, "").toLowerCase();
+  let cursor = headingEnd + 1;
+  while (cursor < chapter.end) {
+    const nextBreak = text.indexOf("\n", cursor);
+    const lineEnd = nextBreak < 0 || nextBreak > chapter.end ? chapter.end : nextBreak;
+    const line = text.slice(cursor, lineEnd).trim();
+    const normalizedLine = line.replace(/\s+/g, "").toLowerCase();
+    if (line && normalizedLine !== normalizedTitle) break;
+    cursor = lineEnd < chapter.end ? lineEnd + 1 : lineEnd;
+  }
+  return cursor;
+}
+
+function setPageContent(start, end) {
+  const text = state.current.text;
+  const chapter = chapterAtStart(start);
+  if (!chapter) {
+    ui.pageText.textContent = text.slice(start, end);
+    return;
+  }
+  const title = document.createElement("h2");
+  title.className = "chapter-page-title";
+  title.textContent = chapter.title;
+  const body = document.createElement("span");
+  body.textContent = text.slice(chapterBodyStart(chapter), end);
+  ui.pageText.replaceChildren(title, body);
+}
+
 function fitCurrentPage(start) {
   const text = state.current.text;
   const pageStart = safeTextBoundary(text, start);
+  const nextChapter = state.chapters.find(chapter => chapter.start > pageStart);
+  const sectionEnd = nextChapter?.start ?? text.length;
   const firstCodePoint = text.codePointAt(pageStart);
-  const minimumEnd = Math.min(text.length, pageStart + (firstCodePoint > 0xffff ? 2 : 1));
+  const chapter = chapterAtStart(pageStart);
+  const firstCharacterEnd = Math.min(text.length, pageStart + (firstCodePoint > 0xffff ? 2 : 1));
+  const minimumEnd = Math.min(sectionEnd, Math.max(firstCharacterEnd, chapterBodyStart(chapter) ?? firstCharacterEnd));
   const fits = (end) => {
-    ui.pageText.textContent = text.slice(pageStart, safeTextBoundary(text, end));
+    setPageContent(pageStart, safeTextBoundary(text, end));
     return ui.pageText.scrollHeight <= ui.pageText.clientHeight + 1;
   };
 
   let lower = pageStart;
-  let upper = Math.min(text.length, pageStart + 1800);
-  while (upper < text.length && fits(upper)) {
+  let upper = Math.min(sectionEnd, pageStart + 1800);
+  while (upper < sectionEnd && fits(upper)) {
     lower = upper;
-    upper = Math.min(text.length, pageStart + (upper - pageStart) * 2);
+    upper = Math.min(sectionEnd, pageStart + (upper - pageStart) * 2);
   }
 
   let best = lower;
@@ -107,8 +150,8 @@ function fitCurrentPage(start) {
   }
 
   // Extremely small/hidden viewports still need to make forward progress.
-  const end = Math.max(minimumEnd, safeTextBoundary(text, best));
-  ui.pageText.textContent = text.slice(pageStart, end);
+  const end = Math.min(sectionEnd, Math.max(minimumEnd, safeTextBoundary(text, best)));
+  setPageContent(pageStart, end);
   return end;
 }
 
@@ -128,8 +171,11 @@ async function renderPage(save = true) {
   if (!state.current) return;
   const offset = state.pageStart;
   state.chapterIndex = Math.max(0, state.chapters.findLastIndex(ch => ch.start <= offset));
+  const currentChapter = state.chapters[state.chapterIndex];
+  const isChapterOpening = Boolean(chapterAtStart(offset));
   ui.bookTitle.textContent = state.current.title;
-  ui.chapterTitle.textContent = state.chapters[state.chapterIndex]?.title || "正文";
+  ui.chapterTitle.textContent = currentChapter?.title || "正文";
+  ui.chapterTitle.hidden = isChapterOpening;
   const percent = Math.min(100, Math.round((state.pageEnd / Math.max(1, state.current.text.length)) * 100));
   ui.progressText.textContent = `第 ${Math.max(1, state.page)} 页 · ${percent}%`;
   ui.progressBar.style.width = `${percent}%`;
@@ -150,6 +196,22 @@ function showReader() {
   ui.welcome.hidden = true;
   ui.readingView.hidden = false;
   ui.footer.hidden = false;
+  $("libraryButton").hidden = false;
+  $("contentsButton").hidden = false;
+}
+
+function showWelcome() {
+  state.current = null;
+  state.pageHistory = [];
+  ui.welcome.hidden = false;
+  ui.readingView.hidden = true;
+  ui.footer.hidden = true;
+  $("libraryButton").hidden = true;
+  $("contentsButton").hidden = true;
+  ui.bookTitle.textContent = "拾页";
+  ui.chapterTitle.hidden = false;
+  ui.chapterTitle.textContent = "你的随身中文阅读器";
+  persistSettings();
 }
 
 async function openBook(book) {
@@ -174,8 +236,9 @@ async function importFile(file) {
     await saveBook(book);
     state.books = await getBooks();
     renderLibrary();
-    await openBook(book);
-    showToast(existing ? "已继续上次阅读" : "已加入书架");
+    renderLibrary();
+    showWelcome();
+    showToast(existing ? "书籍已在书架中" : "已加入书架");
   } catch (error) {
     console.error(error);
     showToast("文件读取失败，请检查编码");
@@ -185,15 +248,39 @@ async function importFile(file) {
 function renderLibrary() {
   const books = [...state.books].sort((a, b) => b.updatedAt - a.updatedAt);
   ui.bookList.replaceChildren(...books.map(book => {
+    const row = document.createElement("div");
+    row.className = "book-row";
     const button = document.createElement("button");
     button.className = `book-card${book.id === state.current?.id ? " active" : ""}`;
     button.innerHTML = `<strong></strong><small></small>`;
     button.querySelector("strong").textContent = book.title;
     button.querySelector("small").textContent = `${Math.round((book.progress / Math.max(1, book.text.length)) * 100)}% · ${new Date(book.updatedAt).toLocaleDateString("zh-CN")}`;
     button.addEventListener("click", () => openBook(book));
-    return button;
+    const remove = document.createElement("button");
+    remove.className = "book-delete";
+    remove.type = "button";
+    remove.setAttribute("aria-label", `删除《${book.title}》`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => removeBook(book));
+    row.append(button, remove);
+    return row;
   }));
+  ui.emptyShelf.hidden = books.length > 0;
   ui.chapterSection.hidden = !state.current;
+}
+
+async function removeBook(book) {
+  if (!window.confirm(`确定从书架删除《${book.title}》吗？\n\n阅读记录也会一并删除。`)) return;
+  await deleteBook(book.id);
+  const wasCurrent = state.current?.id === book.id;
+  state.books = await getBooks();
+  if (wasCurrent) {
+    const nextBook = [...state.books].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (nextBook) await openBook(nextBook);
+    else showWelcome();
+  }
+  renderLibrary();
+  showToast("已从书架删除");
 }
 
 function renderChapters() {
@@ -259,8 +346,49 @@ function showToast(message) {
   toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 1800);
 }
 
-ui.fileInput.addEventListener("change", event => importFile(event.target.files[0]));
-$("libraryButton").addEventListener("click", () => openPanel(ui.libraryPanel));
+async function clearAppCache() {
+  if (!navigator.onLine) {
+    showToast("请联网后再刷新缓存");
+    return;
+  }
+  const button = $("clearCacheButton");
+  button.disabled = true;
+  button.textContent = "正在刷新…";
+  try {
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.allSettled(keys.filter(key => key.startsWith("shiyue-")).map(key => caches.delete(key)));
+    }
+    showToast("缓存已清除，正在重新载入");
+    setTimeout(() => {
+      const refreshedUrl = new URL(window.location.href);
+      refreshedUrl.searchParams.set("refresh", Date.now().toString());
+      window.location.replace(refreshedUrl.href);
+    }, 700);
+  } catch (error) {
+    console.error(error);
+    button.disabled = false;
+    button.textContent = "刷新应用缓存";
+    showToast("缓存刷新失败，请稍后重试");
+  }
+}
+
+ui.fileInput.addEventListener("change", async event => {
+  const files = [...event.target.files];
+  for (const file of files) await importFile(file);
+});
+$("libraryButton").addEventListener("click", () => {
+  closePanels();
+  showWelcome();
+  renderLibrary();
+});
+$("contentsButton").addEventListener("click", () => {
+  if (!state.current) return;
+  ui.chapterSection.hidden = false;
+  renderChapters();
+  openPanel(ui.libraryPanel);
+  requestAnimationFrame(() => ui.chapterList.querySelector("button.active")?.scrollIntoView({ block: "center" }));
+});
 $("settingsButton").addEventListener("click", () => openPanel(ui.settingsPanel));
 ui.scrim.addEventListener("click", closePanels);
 document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closePanels));
@@ -280,6 +408,7 @@ $("fontDown").addEventListener("click", () => { state.fontSize = Math.max(15, st
 $("fontUp").addEventListener("click", () => { state.fontSize = Math.min(32, state.fontSize + 1); applySettings(); repaginateFromCurrentPosition(); });
 $("themeChoices").addEventListener("click", event => { if (!event.target.dataset.theme) return; state.theme = event.target.dataset.theme; applySettings(); });
 ui.encoding.addEventListener("change", () => { state.encoding = ui.encoding.value; persistSettings(); });
+$("clearCacheButton").addEventListener("click", clearAppCache);
 $("reader").addEventListener("click", event => {
   if (!state.current) return;
   const x = event.clientX / innerWidth;
@@ -308,8 +437,7 @@ async function init() {
   try {
     state.books = await getBooks();
     renderLibrary();
-    const last = state.books.find(book => book.id === saved.currentId) || [...state.books].sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    if (last) await openBook(last);
+    showWelcome();
   } catch (error) { console.error("无法打开本地书架", error); }
   if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
 }
