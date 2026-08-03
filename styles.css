@@ -61,11 +61,14 @@ button { cursor: pointer; }
 .close-button { font-family: system-ui, sans-serif; font-size: 29px; font-weight: 200; }
 .outline-button { display: block; padding: 13px; border: 1px solid var(--line); border-radius: 4px; text-align: center; font-family: system-ui, sans-serif; font-size: 13px; cursor: pointer; }
 .book-list { margin: 18px 0; }
-.book-card { width: 100%; padding: 15px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; }
+.book-row { display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: center; border-bottom: 1px solid var(--line); }
+.book-card { min-width: 0; width: 100%; padding: 15px 4px; border: 0; background: transparent; text-align: left; }
 .book-card strong, .book-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .book-card strong { font-size: 15px; }
 .book-card small { margin-top: 6px; color: var(--muted); font-family: system-ui, sans-serif; font-size: 10px; }
 .book-card.active strong { color: var(--accent); }
+.book-delete { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-family: system-ui, sans-serif; font-size: 20px; }
+.book-delete:active { background: var(--line); color: var(--accent); }
 .section-label { margin: 26px 0 8px; color: var(--muted); font-family: system-ui, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .18em; }
 .chapter-list button { display: flex; width: 100%; gap: 12px; padding: 12px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; font-size: 13px; line-height: 1.45; }
 .chapter-list button span { color: var(--muted); font-family: system-ui, sans-serif; font-size: 10px; }

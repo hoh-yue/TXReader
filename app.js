@@ -44,6 +44,7 @@ async function dbAction(mode, callback) {
 
 const getBooks = () => dbAction("readonly", store => store.getAll());
 const saveBook = (book) => dbAction("readwrite", store => store.put(book));
+const deleteBook = (id) => dbAction("readwrite", store => store.delete(id));
 
 function persistSettings() {
   localStorage.setItem(STATE_KEY, JSON.stringify({ fontSize: state.fontSize, theme: state.theme, encoding: state.encoding, currentId: state.current?.id }));
@@ -197,6 +198,18 @@ function showReader() {
   ui.footer.hidden = false;
 }
 
+function showWelcome() {
+  state.current = null;
+  state.pageHistory = [];
+  ui.welcome.hidden = false;
+  ui.readingView.hidden = true;
+  ui.footer.hidden = true;
+  ui.bookTitle.textContent = "拾页";
+  ui.chapterTitle.hidden = false;
+  ui.chapterTitle.textContent = "你的随身中文阅读器";
+  persistSettings();
+}
+
 async function openBook(book) {
   state.current = book;
   showReader();
@@ -230,15 +243,38 @@ async function importFile(file) {
 function renderLibrary() {
   const books = [...state.books].sort((a, b) => b.updatedAt - a.updatedAt);
   ui.bookList.replaceChildren(...books.map(book => {
+    const row = document.createElement("div");
+    row.className = "book-row";
     const button = document.createElement("button");
     button.className = `book-card${book.id === state.current?.id ? " active" : ""}`;
     button.innerHTML = `<strong></strong><small></small>`;
     button.querySelector("strong").textContent = book.title;
     button.querySelector("small").textContent = `${Math.round((book.progress / Math.max(1, book.text.length)) * 100)}% · ${new Date(book.updatedAt).toLocaleDateString("zh-CN")}`;
     button.addEventListener("click", () => openBook(book));
-    return button;
+    const remove = document.createElement("button");
+    remove.className = "book-delete";
+    remove.type = "button";
+    remove.setAttribute("aria-label", `删除《${book.title}》`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => removeBook(book));
+    row.append(button, remove);
+    return row;
   }));
   ui.chapterSection.hidden = !state.current;
+}
+
+async function removeBook(book) {
+  if (!window.confirm(`确定从书架删除《${book.title}》吗？\n\n阅读记录也会一并删除。`)) return;
+  await deleteBook(book.id);
+  const wasCurrent = state.current?.id === book.id;
+  state.books = await getBooks();
+  if (wasCurrent) {
+    const nextBook = [...state.books].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (nextBook) await openBook(nextBook);
+    else showWelcome();
+  }
+  renderLibrary();
+  showToast("已从书架删除");
 }
 
 function renderChapters() {
@@ -304,7 +340,10 @@ function showToast(message) {
   toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 1800);
 }
 
-ui.fileInput.addEventListener("change", event => importFile(event.target.files[0]));
+ui.fileInput.addEventListener("change", async event => {
+  const files = [...event.target.files];
+  for (const file of files) await importFile(file);
+});
 $("libraryButton").addEventListener("click", () => openPanel(ui.libraryPanel));
 $("settingsButton").addEventListener("click", () => openPanel(ui.settingsPanel));
 ui.scrim.addEventListener("click", closePanels);
