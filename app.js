@@ -8,7 +8,7 @@ const ui = {
   fileInput: $("fileInput"), welcome: $("welcome"), readingView: $("readingView"),
   pageText: $("pageText"), footer: $("readingFooter"), bookTitle: $("bookTitle"),
   chapterTitle: $("chapterTitle"), prev: $("prevPage"), next: $("nextPage"),
-  progressText: $("progressText"), progressBar: $("progressBar"), bookList: $("bookList"),
+  progressText: $("progressText"), progressBar: $("progressBar"), bookList: $("homeBookList"), emptyShelf: $("emptyShelf"),
   chapterList: $("chapterList"), chapterSection: $("chapterSection"), scrim: $("scrim"),
   libraryPanel: $("libraryPanel"), settingsPanel: $("settingsPanel"), toast: $("toast"),
   fontValue: $("fontSizeValue"), encoding: $("encodingSelect")
@@ -196,6 +196,8 @@ function showReader() {
   ui.welcome.hidden = true;
   ui.readingView.hidden = false;
   ui.footer.hidden = false;
+  $("libraryButton").hidden = false;
+  $("contentsButton").hidden = false;
 }
 
 function showWelcome() {
@@ -204,6 +206,8 @@ function showWelcome() {
   ui.welcome.hidden = false;
   ui.readingView.hidden = true;
   ui.footer.hidden = true;
+  $("libraryButton").hidden = true;
+  $("contentsButton").hidden = true;
   ui.bookTitle.textContent = "拾页";
   ui.chapterTitle.hidden = false;
   ui.chapterTitle.textContent = "你的随身中文阅读器";
@@ -232,8 +236,9 @@ async function importFile(file) {
     await saveBook(book);
     state.books = await getBooks();
     renderLibrary();
-    await openBook(book);
-    showToast(existing ? "已继续上次阅读" : "已加入书架");
+    renderLibrary();
+    showWelcome();
+    showToast(existing ? "书籍已在书架中" : "已加入书架");
   } catch (error) {
     console.error(error);
     showToast("文件读取失败，请检查编码");
@@ -260,6 +265,7 @@ function renderLibrary() {
     row.append(button, remove);
     return row;
   }));
+  ui.emptyShelf.hidden = books.length > 0;
   ui.chapterSection.hidden = !state.current;
 }
 
@@ -340,11 +346,49 @@ function showToast(message) {
   toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 1800);
 }
 
+async function clearAppCache() {
+  if (!navigator.onLine) {
+    showToast("请联网后再刷新缓存");
+    return;
+  }
+  const button = $("clearCacheButton");
+  button.disabled = true;
+  button.textContent = "正在刷新…";
+  try {
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.allSettled(keys.filter(key => key.startsWith("shiyue-")).map(key => caches.delete(key)));
+    }
+    showToast("缓存已清除，正在重新载入");
+    setTimeout(() => {
+      const refreshedUrl = new URL(window.location.href);
+      refreshedUrl.searchParams.set("refresh", Date.now().toString());
+      window.location.replace(refreshedUrl.href);
+    }, 700);
+  } catch (error) {
+    console.error(error);
+    button.disabled = false;
+    button.textContent = "刷新应用缓存";
+    showToast("缓存刷新失败，请稍后重试");
+  }
+}
+
 ui.fileInput.addEventListener("change", async event => {
   const files = [...event.target.files];
   for (const file of files) await importFile(file);
 });
-$("libraryButton").addEventListener("click", () => openPanel(ui.libraryPanel));
+$("libraryButton").addEventListener("click", () => {
+  closePanels();
+  showWelcome();
+  renderLibrary();
+});
+$("contentsButton").addEventListener("click", () => {
+  if (!state.current) return;
+  ui.chapterSection.hidden = false;
+  renderChapters();
+  openPanel(ui.libraryPanel);
+  requestAnimationFrame(() => ui.chapterList.querySelector("button.active")?.scrollIntoView({ block: "center" }));
+});
 $("settingsButton").addEventListener("click", () => openPanel(ui.settingsPanel));
 ui.scrim.addEventListener("click", closePanels);
 document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closePanels));
@@ -364,6 +408,7 @@ $("fontDown").addEventListener("click", () => { state.fontSize = Math.max(15, st
 $("fontUp").addEventListener("click", () => { state.fontSize = Math.min(32, state.fontSize + 1); applySettings(); repaginateFromCurrentPosition(); });
 $("themeChoices").addEventListener("click", event => { if (!event.target.dataset.theme) return; state.theme = event.target.dataset.theme; applySettings(); });
 ui.encoding.addEventListener("change", () => { state.encoding = ui.encoding.value; persistSettings(); });
+$("clearCacheButton").addEventListener("click", clearAppCache);
 $("reader").addEventListener("click", event => {
   if (!state.current) return;
   const x = event.clientX / innerWidth;
@@ -392,8 +437,7 @@ async function init() {
   try {
     state.books = await getBooks();
     renderLibrary();
-    const last = state.books.find(book => book.id === saved.currentId) || [...state.books].sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    if (last) await openBook(last);
+    showWelcome();
   } catch (error) { console.error("无法打开本地书架", error); }
   if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
 }
