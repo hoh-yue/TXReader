@@ -193,6 +193,7 @@ async function renderPage(save = true) {
 }
 
 function showReader() {
+  document.querySelector(".topbar").classList.remove("home-mode");
   ui.welcome.hidden = true;
   ui.readingView.hidden = false;
   ui.footer.hidden = false;
@@ -201,6 +202,7 @@ function showReader() {
 }
 
 function showWelcome() {
+  document.querySelector(".topbar").classList.add("home-mode");
   state.current = null;
   state.pageHistory = [];
   ui.welcome.hidden = false;
