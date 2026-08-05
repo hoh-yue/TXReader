@@ -2,6 +2,7 @@ const DB_NAME = "shiyue-reader";
 const DB_VERSION = 1;
 const BOOK_STORE = "books";
 const STATE_KEY = "shiyue-settings";
+const PROGRESS_KEY = "shiyue-progress";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -58,6 +59,38 @@ function persistSettings() {
   localStorage.setItem(STATE_KEY, JSON.stringify({ fontSize: state.fontSize, theme: state.theme, encoding: state.encoding, currentId: state.current?.id }));
 }
 
+function getProgressBackups() {
+  try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function checkpointProgress(book) {
+  try {
+    const backups = getProgressBackups();
+    backups[book.id] = {
+      progress: book.progress,
+      pageHistory: book.pageHistory,
+      pageNumber: book.pageNumber,
+      updatedAt: book.updatedAt
+    };
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(backups));
+  } catch (error) { console.warn("无法写入阅读位置检查点", error); }
+}
+
+function restoreCheckpoint(book) {
+  const checkpoint = getProgressBackups()[book.id];
+  if (!checkpoint || checkpoint.updatedAt < (book.updatedAt || 0)) return book;
+  return { ...book, ...checkpoint };
+}
+
+function removeCheckpoint(id) {
+  try {
+    const backups = getProgressBackups();
+    delete backups[id];
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(backups));
+  } catch (error) { console.warn("无法删除阅读位置检查点", error); }
+}
+
 function persistCurrentPosition() {
   if (!state.current) return Promise.resolve();
   state.current.progress = state.pageStart;
@@ -65,6 +98,9 @@ function persistCurrentPosition() {
   state.current.pageNumber = state.page;
   state.current.updatedAt = Date.now();
   persistSettings();
+  // localStorage is synchronous, so this small checkpoint survives abrupt
+  // mobile-PWA termination even when the larger IndexedDB write does not.
+  checkpointProgress(state.current);
   return queueBookSave(state.current);
 }
 
@@ -254,7 +290,7 @@ async function importFile(file) {
     const book = existing || { id, title: file.name.replace(/\.txt$/i, ""), text, progress: 0, createdAt: Date.now(), updatedAt: Date.now() };
     if (existing) book.text = text;
     await saveBook(book);
-    state.books = await getBooks();
+    state.books = (await getBooks()).map(restoreCheckpoint);
     renderLibrary();
     renderLibrary();
     showWelcome();
@@ -292,8 +328,9 @@ function renderLibrary() {
 async function removeBook(book) {
   if (!window.confirm(`确定从书架删除《${book.title}》吗？\n\n阅读记录也会一并删除。`)) return;
   await deleteBook(book.id);
+  removeCheckpoint(book.id);
   const wasCurrent = state.current?.id === book.id;
-  state.books = await getBooks();
+  state.books = (await getBooks()).map(restoreCheckpoint);
   if (wasCurrent) {
     const nextBook = [...state.books].sort((a, b) => b.updatedAt - a.updatedAt)[0];
     if (nextBook) await openBook(nextBook);
@@ -472,7 +509,7 @@ window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer
 async function init() {
   applySettings();
   try {
-    state.books = await getBooks();
+    state.books = (await getBooks()).map(restoreCheckpoint);
     const lastBook = state.books.find(book => book.id === saved.currentId);
     if (lastBook) await openBook(lastBook);
     else {
