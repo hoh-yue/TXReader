@@ -233,7 +233,8 @@ async function renderPage(save = true) {
   const percent = Math.min(100, Math.round((state.pageEnd / Math.max(1, state.current.text.length)) * 100));
   ui.progressText.textContent = `第 ${Math.max(1, state.page)} 页 · ${percent}%`;
   ui.progressBar.style.width = `${percent}%`;
-  ui.prev.disabled = state.pageHistory.length === 0;
+  const canEnterPreviousChapter = currentChapter && offset === currentChapter.start && state.chapterIndex > 0;
+  ui.prev.disabled = state.pageHistory.length === 0 && !canEnterPreviousChapter;
   ui.next.disabled = state.pageEnd >= state.current.text.length;
   document.querySelectorAll(".chapter-list button").forEach((el, i) => el.classList.toggle("active", i === state.chapterIndex));
   if (save) {
@@ -325,6 +326,21 @@ function renderLibrary() {
   ui.chapterSection.hidden = !state.current;
 }
 
+function pageStartsForChapter(index) {
+  const chapter = state.chapters[index];
+  if (!chapter) return [];
+  const starts = [];
+  let cursor = chapter.start;
+  let safety = 0;
+  while (cursor < chapter.end && safety++ < state.current.text.length) {
+    starts.push(cursor);
+    const next = fitCurrentPage(cursor);
+    if (next <= cursor) break;
+    cursor = next;
+  }
+  return starts;
+}
+
 async function removeBook(book) {
   if (!window.confirm(`确定从书架删除《${book.title}》吗？\n\n阅读记录也会一并删除。`)) return;
   await deleteBook(book.id);
@@ -347,12 +363,10 @@ function renderChapters() {
     button.innerHTML = `<span>${String(i + 1).padStart(2, "0")}</span>`;
     button.append(document.createTextNode(chapter.title));
     button.addEventListener("click", () => {
-      // Keep the page we jumped from reachable through "上一页". Clearing
-      // history here made chapter-menu navigation a one-way operation.
-      if (state.pageStart !== chapter.start) {
-        state.pageHistory.push(state.pageStart);
-        state.page++;
-      }
+      // A menu jump follows chapter order, not navigation history. From the
+      // opening of chapter 9, "上一页" should be the last page of chapter 8.
+      state.pageHistory = pageStartsForChapter(i - 1);
+      state.page = state.pageHistory.length + 1;
       state.pageStart = chapter.start;
       state.pageEnd = fitCurrentPage(state.pageStart);
       renderPage(); closePanels();
@@ -369,6 +383,13 @@ function turnPage(delta) {
     state.pageStart = state.pageEnd;
     state.page++;
   } else {
+    if (!state.pageHistory.length) {
+      const chapterIndex = state.chapters.findLastIndex(chapter => chapter.start <= state.pageStart);
+      const atChapterStart = state.chapters[chapterIndex]?.start === state.pageStart;
+      if (atChapterStart && chapterIndex > 0) {
+        state.pageHistory = pageStartsForChapter(chapterIndex - 1);
+      }
+    }
     if (!state.pageHistory.length) return;
     state.pageStart = state.pageHistory.pop();
     state.page = Math.max(1, state.page - 1);
@@ -475,17 +496,6 @@ $("reader").addEventListener("click", event => {
   const x = event.clientX / innerWidth;
   if (x < .34) turnPage(-1); else if (x > .66) turnPage(1);
 });
-let touchStartX = 0;
-let touchStartY = 0;
-ui.readingView.addEventListener("touchstart", event => {
-  touchStartX = event.changedTouches[0].clientX;
-  touchStartY = event.changedTouches[0].clientY;
-}, { passive: true });
-ui.readingView.addEventListener("touchend", event => {
-  const deltaX = event.changedTouches[0].clientX - touchStartX;
-  const deltaY = event.changedTouches[0].clientY - touchStartY;
-  if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) turnPage(deltaX < 0 ? 1 : -1);
-}, { passive: true });
 document.addEventListener("keydown", event => {
   // Keep the reader at a stable scale. The viewport declaration handles
   // mobile browsers; these guards cover desktop shortcuts and trackpads.
