@@ -231,6 +231,11 @@ function showWelcome() {
 
 async function openBook(book) {
   state.current = book;
+  // Restore the persisted position synchronously. Pagination waits for the
+  // reader to become visible, but lifecycle saves may run before that frame.
+  state.pageStart = safeTextBoundary(book.text, Number.isFinite(book.progress) ? book.progress : 0);
+  state.pageHistory = Array.isArray(book.pageHistory) ? [...book.pageHistory] : [];
+  state.page = Number.isFinite(book.pageNumber) ? book.pageNumber : state.pageHistory.length + 1;
   showReader();
   closePanels();
   requestAnimationFrame(() => paginate(false));
@@ -305,8 +310,12 @@ function renderChapters() {
     button.innerHTML = `<span>${String(i + 1).padStart(2, "0")}</span>`;
     button.append(document.createTextNode(chapter.title));
     button.addEventListener("click", () => {
-      state.pageHistory = [];
-      state.page = 1;
+      // Keep the page we jumped from reachable through "上一页". Clearing
+      // history here made chapter-menu navigation a one-way operation.
+      if (state.pageStart !== chapter.start) {
+        state.pageHistory.push(state.pageStart);
+        state.page++;
+      }
       state.pageStart = chapter.start;
       state.pageEnd = fitCurrentPage(state.pageStart);
       renderPage(); closePanels();
