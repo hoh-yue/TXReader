@@ -428,9 +428,22 @@ ui.readingView.addEventListener("touchend", event => {
   if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) turnPage(deltaX < 0 ? 1 : -1);
 }, { passive: true });
 document.addEventListener("keydown", event => {
+  // Keep the reader at a stable scale. The viewport declaration handles
+  // mobile browsers; these guards cover desktop shortcuts and trackpads.
+  if ((event.ctrlKey || event.metaKey) && ["+", "-", "=", "0"].includes(event.key)) {
+    event.preventDefault();
+    return;
+  }
   if (event.key === "ArrowLeft") turnPage(-1);
   if (event.key === "ArrowRight" || event.key === " ") turnPage(1);
   if (event.key === "Escape") closePanels();
+});
+document.addEventListener("wheel", event => {
+  if (event.ctrlKey) event.preventDefault();
+}, { passive: false });
+document.addEventListener("dblclick", event => event.preventDefault(), { passive: false });
+["gesturestart", "gesturechange", "gestureend"].forEach(type => {
+  document.addEventListener(type, event => event.preventDefault(), { passive: false });
 });
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(repaginateFromCurrentPosition, 180); });
 
