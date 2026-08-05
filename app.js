@@ -441,7 +441,38 @@ async function init() {
     renderLibrary();
     showWelcome();
   } catch (error) { console.error("无法打开本地书架", error); }
-  if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+}
+
+// Register immediately. Waiting until after the IndexedDB work above can miss
+// the load event on fast devices, leaving the app without an offline cache.
+if ("serviceWorker" in navigator) {
+  const wasControlled = Boolean(navigator.serviceWorker.controller);
+  let refreshing = false;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // A newly activated worker owns the page now. Reload once so the visible
+    // app also switches to the files that worker cached during installation.
+    if (wasControlled && !refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+
+  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then(registration => {
+    const checkForUpdate = () => {
+      if (navigator.onLine) registration.update().catch(error => {
+        console.warn("无法检查应用更新", error);
+      });
+    };
+
+    checkForUpdate();
+    window.addEventListener("online", checkForUpdate);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") checkForUpdate();
+    });
+  }).catch(error => {
+    console.error("无法启用离线模式", error);
+  });
 }
 
 init();
