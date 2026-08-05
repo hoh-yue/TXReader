@@ -21,6 +21,7 @@ const state = {
   pageStart: 0, pageEnd: 0, pageHistory: []
 };
 let resizeTimer;
+let bookSaveQueue = Promise.resolve();
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -46,8 +47,25 @@ const getBooks = () => dbAction("readonly", store => store.getAll());
 const saveBook = (book) => dbAction("readwrite", store => store.put(book));
 const deleteBook = (id) => dbAction("readwrite", store => store.delete(id));
 
+function queueBookSave(book) {
+  // Serialize writes so a slower, older page-turn save cannot overwrite a
+  // newer position. The book object stays current while queued saves drain.
+  bookSaveQueue = bookSaveQueue.catch(() => {}).then(() => saveBook(book));
+  return bookSaveQueue;
+}
+
 function persistSettings() {
   localStorage.setItem(STATE_KEY, JSON.stringify({ fontSize: state.fontSize, theme: state.theme, encoding: state.encoding, currentId: state.current?.id }));
+}
+
+function persistCurrentPosition() {
+  if (!state.current) return Promise.resolve();
+  state.current.progress = state.pageStart;
+  state.current.pageHistory = state.pageHistory.slice(-200);
+  state.current.pageNumber = state.page;
+  state.current.updatedAt = Date.now();
+  persistSettings();
+  return queueBookSave(state.current);
 }
 
 function decodeFile(buffer) {
@@ -183,12 +201,7 @@ async function renderPage(save = true) {
   ui.next.disabled = state.pageEnd >= state.current.text.length;
   document.querySelectorAll(".chapter-list button").forEach((el, i) => el.classList.toggle("active", i === state.chapterIndex));
   if (save) {
-    state.current.progress = offset;
-    state.current.pageHistory = state.pageHistory.slice(-200);
-    state.current.pageNumber = state.page;
-    state.current.updatedAt = Date.now();
-    await saveBook(state.current);
-    persistSettings();
+    await persistCurrentPosition();
   }
 }
 
@@ -451,10 +464,18 @@ async function init() {
   applySettings();
   try {
     state.books = await getBooks();
-    renderLibrary();
-    showWelcome();
+    const lastBook = state.books.find(book => book.id === saved.currentId);
+    if (lastBook) await openBook(lastBook);
+    else {
+      renderLibrary();
+      showWelcome();
+    }
   } catch (error) { console.error("无法打开本地书架", error); }
 }
+
+// Start an IndexedDB write while the page is still alive. This covers app
+// updates, tab closes, and mobile browsers suspending the installed PWA.
+window.addEventListener("pagehide", () => { persistCurrentPosition().catch(console.error); });
 
 // Register immediately. Waiting until after the IndexedDB work above can miss
 // the load event on fast devices, leaving the app without an offline cache.
@@ -462,11 +483,14 @@ if ("serviceWorker" in navigator) {
   const wasControlled = Boolean(navigator.serviceWorker.controller);
   let refreshing = false;
 
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
+  navigator.serviceWorker.addEventListener("controllerchange", async () => {
     // A newly activated worker owns the page now. Reload once so the visible
     // app also switches to the files that worker cached during installation.
     if (wasControlled && !refreshing) {
       refreshing = true;
+      try { await persistCurrentPosition(); } catch (error) {
+        console.error("无法在应用更新前保存阅读位置", error);
+      }
       window.location.reload();
     }
   });

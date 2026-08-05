@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiyue-v24";
+const CACHE_NAME = "shiyue-v25";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icons/icon.svg"];
 
 self.addEventListener("install", event => {
