@@ -4,6 +4,11 @@ const BOOK_STORE = "books";
 const PROGRESS_STORE = "progress";
 const STATE_KEY = "shiyue-settings";
 const PROGRESS_KEY = "shiyue-progress";
+const PROGRESS_SAVE_DELAY = 750;
+const RESIZE_DEBOUNCE = 180;
+const MIN_FONT_SIZE = 15;
+const MAX_FONT_SIZE = 32;
+const THEME_COLORS = { paper: "#f4eddf", white: "#ffffff", green: "#dfe9dc", night: "#242628" };
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -13,7 +18,12 @@ const ui = {
   progressText: $("progressText"), progressBar: $("progressBar"), bookList: $("homeBookList"), emptyShelf: $("emptyShelf"),
   chapterList: $("chapterList"), chapterSection: $("chapterSection"), scrim: $("scrim"),
   libraryPanel: $("libraryPanel"), settingsPanel: $("settingsPanel"), toast: $("toast"),
-  fontValue: $("fontSizeValue"), encoding: $("encodingSelect")
+  fontValue: $("fontSizeValue"), encoding: $("encodingSelect"), reader: $("reader"),
+  libraryButton: $("libraryButton"), contentsButton: $("contentsButton"), settingsButton: $("settingsButton"),
+  tapPrevious: $("tapPrevious"), tapNext: $("tapNext"), fontDown: $("fontDown"), fontUp: $("fontUp"),
+  themeChoices: $("themeChoices"), clearCacheButton: $("clearCacheButton"),
+  topbar: document.querySelector(".topbar"), themeColor: document.querySelector('meta[name="theme-color"]'),
+  themeButtons: document.querySelectorAll("[data-theme]"), closeButtons: document.querySelectorAll("[data-close]")
 };
 
 const saved = JSON.parse(localStorage.getItem(STATE_KEY) || "{}");
@@ -115,7 +125,7 @@ function queueProgressSave(book, immediate = false) {
     return progressSaveQueue;
   };
   if (immediate) return enqueue();
-  progressSaveTimer = setTimeout(enqueue, 750);
+  progressSaveTimer = setTimeout(enqueue, PROGRESS_SAVE_DELAY);
   return Promise.resolve();
 }
 
@@ -321,23 +331,23 @@ async function renderPage(save = true) {
 }
 
 function showReader() {
-  document.querySelector(".topbar").classList.remove("home-mode");
+  ui.topbar.classList.remove("home-mode");
   ui.welcome.hidden = true;
   ui.readingView.hidden = false;
   ui.footer.hidden = false;
-  $("libraryButton").hidden = false;
-  $("contentsButton").hidden = false;
+  ui.libraryButton.hidden = false;
+  ui.contentsButton.hidden = false;
 }
 
 function showWelcome() {
-  document.querySelector(".topbar").classList.add("home-mode");
+  ui.topbar.classList.add("home-mode");
   state.current = null;
   state.pageHistory = [];
   ui.welcome.hidden = false;
   ui.readingView.hidden = true;
   ui.footer.hidden = true;
-  $("libraryButton").hidden = true;
-  $("contentsButton").hidden = true;
+  ui.libraryButton.hidden = true;
+  ui.contentsButton.hidden = true;
   ui.bookTitle.textContent = "拾页";
   ui.chapterTitle.hidden = false;
   ui.chapterTitle.textContent = "你的随身中文阅读器";
@@ -514,8 +524,8 @@ function applySettings() {
   document.documentElement.style.setProperty("--font-size", `${state.fontSize}px`);
   ui.fontValue.textContent = state.fontSize;
   ui.encoding.value = state.encoding;
-  document.querySelector('meta[name="theme-color"]').content = ({ paper: "#f4eddf", white: "#ffffff", green: "#dfe9dc", night: "#242628" })[state.theme];
-  document.querySelectorAll("[data-theme]").forEach(el => el.classList.toggle("active", el.dataset.theme === state.theme));
+  ui.themeColor.content = THEME_COLORS[state.theme];
+  ui.themeButtons.forEach(el => el.classList.toggle("active", el.dataset.theme === state.theme));
   persistSettings();
 }
 
@@ -531,7 +541,7 @@ async function clearAppCache() {
   const confirmed = window.confirm("确定清除应用数据吗？\n\n所有书籍会保留，但阅读进度将重置到第一页。显示设置和离线缓存也会被清除。");
   if (!confirmed) return;
 
-  const button = $("clearCacheButton");
+  const button = ui.clearCacheButton;
   button.disabled = true;
   button.textContent = "正在清除…";
   isClearingData = true;
@@ -558,36 +568,39 @@ async function clearAppCache() {
   }
 }
 
+function bindPrimaryControls() {
 ui.fileInput.addEventListener("change", async event => {
   const files = [...event.target.files];
   for (const file of files) await importFile(file);
 });
-$("libraryButton").addEventListener("click", () => {
+ui.libraryButton.addEventListener("click", () => {
   closePanels();
   showWelcome();
   renderLibrary();
 });
-$("contentsButton").addEventListener("click", () => {
+ui.contentsButton.addEventListener("click", () => {
   if (!state.current) return;
   ui.chapterSection.hidden = false;
   renderChapters();
   openPanel(ui.libraryPanel);
   requestAnimationFrame(() => ui.chapterList.querySelector("button.active")?.scrollIntoView({ block: "center" }));
 });
-$("settingsButton").addEventListener("click", () => openPanel(ui.settingsPanel));
+ui.settingsButton.addEventListener("click", () => openPanel(ui.settingsPanel));
 ui.scrim.addEventListener("click", closePanels);
-document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closePanels));
+ui.closeButtons.forEach(button => button.addEventListener("click", closePanels));
 ui.prev.addEventListener("click", () => turnPage(-1));
 ui.next.addEventListener("click", () => turnPage(1));
-$("tapPrevious").addEventListener("click", event => { event.stopPropagation(); turnPage(-1); });
-$("tapNext").addEventListener("click", event => { event.stopPropagation(); turnPage(1); });
+ui.tapPrevious.addEventListener("click", event => { event.stopPropagation(); turnPage(-1); });
+ui.tapNext.addEventListener("click", event => { event.stopPropagation(); turnPage(1); });
+}
 
 // Own horizontal gestures on the reading surface so mobile browsers do not
 // interpret an edge swipe as history navigation. Calling preventDefault from
 // touchstart also suppresses the synthetic click, so short taps are handled
 // here and mouse/keyboard clicks continue to use the listeners above.
-const readingView = $("readingView");
-let readerTouch = null;
+function bindReaderGestures() {
+  const readingView = ui.readingView;
+  let readerTouch = null;
 
 readingView.addEventListener("touchstart", event => {
   if (!state.current || event.touches.length !== 1) {
@@ -627,6 +640,8 @@ readingView.addEventListener("touchend", event => {
 }, { passive: false });
 
 readingView.addEventListener("touchcancel", () => { readerTouch = null; }, { passive: false });
+}
+
 function repaginateFromCurrentPosition() {
   if (!state.current) return;
   state.current.progress = state.pageStart;
@@ -635,12 +650,13 @@ function repaginateFromCurrentPosition() {
   paginate(false);
 }
 
-$("fontDown").addEventListener("click", () => { state.fontSize = Math.max(15, state.fontSize - 1); applySettings(); repaginateFromCurrentPosition(); });
-$("fontUp").addEventListener("click", () => { state.fontSize = Math.min(32, state.fontSize + 1); applySettings(); repaginateFromCurrentPosition(); });
-$("themeChoices").addEventListener("click", event => { if (!event.target.dataset.theme) return; state.theme = event.target.dataset.theme; applySettings(); });
+function bindPreferenceAndGlobalControls() {
+ui.fontDown.addEventListener("click", () => { state.fontSize = Math.max(MIN_FONT_SIZE, state.fontSize - 1); applySettings(); repaginateFromCurrentPosition(); });
+ui.fontUp.addEventListener("click", () => { state.fontSize = Math.min(MAX_FONT_SIZE, state.fontSize + 1); applySettings(); repaginateFromCurrentPosition(); });
+ui.themeChoices.addEventListener("click", event => { if (!event.target.dataset.theme) return; state.theme = event.target.dataset.theme; applySettings(); });
 ui.encoding.addEventListener("change", () => { state.encoding = ui.encoding.value; persistSettings(); });
-$("clearCacheButton").addEventListener("click", clearAppCache);
-$("reader").addEventListener("click", event => {
+ui.clearCacheButton.addEventListener("click", clearAppCache);
+ui.reader.addEventListener("click", event => {
   if (!state.current) return;
   const x = event.clientX / innerWidth;
   if (x < .34) turnPage(-1); else if (x > .66) turnPage(1);
@@ -663,7 +679,14 @@ document.addEventListener("dblclick", event => event.preventDefault(), { passive
 ["gesturestart", "gesturechange", "gestureend"].forEach(type => {
   document.addEventListener(type, event => event.preventDefault(), { passive: false });
 });
-window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(repaginateFromCurrentPosition, 180); });
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(repaginateFromCurrentPosition, RESIZE_DEBOUNCE); });
+}
+
+function bindEvents() {
+  bindPrimaryControls();
+  bindReaderGestures();
+  bindPreferenceAndGlobalControls();
+}
 
 async function init() {
   applySettings();
@@ -726,4 +749,5 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+bindEvents();
 init();
