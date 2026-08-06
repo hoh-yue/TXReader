@@ -233,8 +233,11 @@ async function renderPage(save = true) {
   const percent = Math.min(100, Math.round((state.pageEnd / Math.max(1, state.current.text.length)) * 100));
   ui.progressText.textContent = `第 ${Math.max(1, state.page)} 页 · ${percent}%`;
   ui.progressBar.style.width = `${percent}%`;
-  const canEnterPreviousChapter = currentChapter && offset === currentChapter.start && state.chapterIndex > 0;
-  ui.prev.disabled = state.pageHistory.length === 0 && !canEnterPreviousChapter;
+  // Whether a previous page exists is a property of the current text position,
+  // not of pageHistory. History can legitimately be empty after a reload,
+  // resize, settings change, or chapter-menu jump.
+  const canGoPrevious = currentChapter && (offset > currentChapter.start || state.chapterIndex > 0);
+  ui.prev.disabled = !canGoPrevious;
   ui.next.disabled = state.pageEnd >= state.current.text.length;
   document.querySelectorAll(".chapter-list button").forEach((el, i) => el.classList.toggle("active", i === state.chapterIndex));
   if (save) {
@@ -341,6 +344,30 @@ function pageStartsForChapter(index) {
   return starts;
 }
 
+function previousPageStart() {
+  const chapterIndex = state.chapters.findLastIndex(chapter => chapter.start <= state.pageStart);
+  const chapter = state.chapters[chapterIndex];
+  if (!chapter) return null;
+
+  // At a chapter opening, the adjacent page is the final page of the previous
+  // chapter. This is the only case in which Previous crosses a chapter border.
+  if (state.pageStart === chapter.start) {
+    if (chapterIndex === 0) return null;
+    return pageStartsForChapter(chapterIndex - 1).at(-1) ?? null;
+  }
+
+  // Recreate this chapter's stable page boundaries. This remains correct when
+  // persisted history is missing or belongs to an older viewport/font size.
+  let cursor = chapter.start;
+  let safety = 0;
+  while (cursor < state.pageStart && safety++ < state.current.text.length) {
+    const next = fitCurrentPage(cursor);
+    if (next <= cursor || next >= state.pageStart) return cursor;
+    cursor = next;
+  }
+  return null;
+}
+
 async function removeBook(book) {
   if (!window.confirm(`确定从书架删除《${book.title}》吗？\n\n阅读记录也会一并删除。`)) return;
   await deleteBook(book.id);
@@ -383,15 +410,12 @@ function turnPage(delta) {
     state.pageStart = state.pageEnd;
     state.page++;
   } else {
-    if (!state.pageHistory.length) {
-      const chapterIndex = state.chapters.findLastIndex(chapter => chapter.start <= state.pageStart);
-      const atChapterStart = state.chapters[chapterIndex]?.start === state.pageStart;
-      if (atChapterStart && chapterIndex > 0) {
-        state.pageHistory = pageStartsForChapter(chapterIndex - 1);
-      }
-    }
-    if (!state.pageHistory.length) return;
-    state.pageStart = state.pageHistory.pop();
+    const previousStart = previousPageStart();
+    if (previousStart === null) return;
+    state.pageStart = previousStart;
+    // Keep persisted history consistent, but never use it to decide where the
+    // Previous button goes.
+    state.pageHistory = state.pageHistory.filter(start => start < previousStart);
     state.page = Math.max(1, state.page - 1);
   }
   state.pageEnd = fitCurrentPage(state.pageStart);
