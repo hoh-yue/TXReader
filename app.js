@@ -1,6 +1,7 @@
 const DB_NAME = "shiyue-reader";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const BOOK_STORE = "books";
+const PROGRESS_STORE = "progress";
 const STATE_KEY = "shiyue-settings";
 const PROGRESS_KEY = "shiyue-progress";
 
@@ -19,40 +20,79 @@ const saved = JSON.parse(localStorage.getItem(STATE_KEY) || "{}");
 const state = {
   books: [], current: null, page: 0, pages: [], chapters: [], chapterIndex: 0,
   fontSize: saved.fontSize || 20, theme: saved.theme || "paper", encoding: saved.encoding || "auto",
-  pageStart: 0, pageEnd: 0, pageHistory: []
+  pageStart: 0, pageEnd: 0, pageHistory: [], layoutKey: ""
 };
 let resizeTimer;
-let bookSaveQueue = Promise.resolve();
+let progressSaveTimer;
+let progressSaveQueue = Promise.resolve();
 
 function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => request.result.createObjectStore(BOOK_STORE, { keyPath: "id" });
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(BOOK_STORE)) db.createObjectStore(BOOK_STORE, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(PROGRESS_STORE)) db.createObjectStore(PROGRESS_STORE, { keyPath: "id" });
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
-async function dbAction(mode, callback) {
+async function dbAction(storeName, mode, callback) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(BOOK_STORE, mode);
-    const store = tx.objectStore(BOOK_STORE);
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
     const result = callback(store);
     tx.oncomplete = () => { db.close(); resolve(result?.result); };
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
 }
 
-const getBooks = () => dbAction("readonly", store => store.getAll());
-const saveBook = (book) => dbAction("readwrite", store => store.put(book));
-const deleteBook = (id) => dbAction("readwrite", store => store.delete(id));
+const getBookRecords = () => dbAction(BOOK_STORE, "readonly", store => store.getAll());
+const getProgressRecords = () => dbAction(PROGRESS_STORE, "readonly", store => store.getAll());
+const saveBook = (book) => dbAction(BOOK_STORE, "readwrite", store => store.put(book));
+const saveProgress = (progress) => dbAction(PROGRESS_STORE, "readwrite", store => store.put(progress));
 
-function queueBookSave(book) {
-  // Serialize writes so a slower, older page-turn save cannot overwrite a
-  // newer position. The book object stays current while queued saves drain.
-  bookSaveQueue = bookSaveQueue.catch(() => {}).then(() => saveBook(book));
-  return bookSaveQueue;
+async function getBooks() {
+  const [books, progressRecords] = await Promise.all([getBookRecords(), getProgressRecords()]);
+  const progressById = new Map(progressRecords.map(progress => [progress.id, progress]));
+  return books.map(book => ({ ...book, ...progressById.get(book.id) }));
+}
+
+async function deleteBook(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([BOOK_STORE, PROGRESS_STORE], "readwrite");
+    tx.objectStore(BOOK_STORE).delete(id);
+    tx.objectStore(PROGRESS_STORE).delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+function progressRecord(book) {
+  return {
+    id: book.id,
+    progress: book.progress,
+    pageHistory: book.pageHistory,
+    pageNumber: book.pageNumber,
+    layoutKey: book.layoutKey,
+    updatedAt: book.updatedAt
+  };
+}
+
+function queueProgressSave(book, immediate = false) {
+  clearTimeout(progressSaveTimer);
+  const enqueue = () => {
+    const snapshot = progressRecord(book);
+    progressSaveQueue = progressSaveQueue.catch(() => {}).then(() => saveProgress(snapshot));
+    return progressSaveQueue;
+  };
+  if (immediate) return enqueue();
+  progressSaveTimer = setTimeout(enqueue, 750);
+  return Promise.resolve();
 }
 
 function persistSettings() {
@@ -91,17 +131,22 @@ function removeCheckpoint(id) {
   } catch (error) { console.warn("无法删除阅读位置检查点", error); }
 }
 
-function persistCurrentPosition() {
+function currentLayoutKey() {
+  return `${ui.pageText.clientWidth}x${ui.pageText.clientHeight}:${state.fontSize}`;
+}
+
+function persistCurrentPosition(immediate = false) {
   if (!state.current) return Promise.resolve();
   state.current.progress = state.pageStart;
   state.current.pageHistory = state.pageHistory.slice(-200);
   state.current.pageNumber = state.page;
+  state.current.layoutKey = state.layoutKey;
   state.current.updatedAt = Date.now();
   persistSettings();
   // localStorage is synchronous, so this small checkpoint survives abrupt
   // mobile-PWA termination even when the larger IndexedDB write does not.
   checkpointProgress(state.current);
-  return queueBookSave(state.current);
+  return queueProgressSave(state.current, immediate);
 }
 
 function decodeFile(buffer) {
@@ -213,12 +258,18 @@ function paginate(keepPosition = true) {
   if (!state.current) return;
   const oldOffset = keepPosition ? state.pageStart : state.current.progress || 0;
   state.chapters = findChapters(state.current.text);
-  state.pageHistory = Array.isArray(state.current.pageHistory) ? [...state.current.pageHistory] : [];
+  state.layoutKey = currentLayoutKey();
+  const layoutMatches = state.current.layoutKey === state.layoutKey;
+  state.pageHistory = layoutMatches && Array.isArray(state.current.pageHistory) ? [...state.current.pageHistory] : [];
   state.pageStart = safeTextBoundary(state.current.text, oldOffset);
-  state.page = pageNumberForStart(state.pageStart);
   state.pageEnd = fitCurrentPage(state.pageStart);
+  if (layoutMatches && Number.isFinite(state.current.pageNumber)) {
+    state.page = Math.max(1, state.current.pageNumber);
+  } else {
+    const pageLength = Math.max(1, state.pageEnd - state.pageStart);
+    state.page = Math.max(1, Math.round(state.pageStart / pageLength) + 1);
+  }
   renderPage(false);
-  renderChapters();
 }
 
 async function renderPage(save = true) {
@@ -329,43 +380,10 @@ function renderLibrary() {
   ui.chapterSection.hidden = !state.current;
 }
 
-function pageStartsForChapter(index) {
-  const chapter = state.chapters[index];
-  if (!chapter) return [];
-  const starts = [];
-  let cursor = chapter.start;
-  let safety = 0;
-  while (cursor < chapter.end && safety++ < state.current.text.length) {
-    starts.push(cursor);
-    const next = fitCurrentPage(cursor);
-    if (next <= cursor) break;
-    cursor = next;
-  }
-  return starts;
-}
-
-function pageNumberForStart(target) {
-  let pageNumber = 1;
-
-  for (let index = 0; index < state.chapters.length; index++) {
-    const chapter = state.chapters[index];
-    if (target <= chapter.start) return pageNumber;
-
-    let cursor = chapter.start;
-    let safety = 0;
-    while (cursor < chapter.end && cursor < target && safety++ < state.current.text.length) {
-      const next = fitCurrentPage(cursor);
-      if (next <= cursor || next > target) return pageNumber;
-      cursor = next;
-      pageNumber++;
-      if (cursor === target) return pageNumber;
-    }
-  }
-
-  return pageNumber;
-}
-
 function previousPageStart() {
+  const cached = state.pageHistory.at(-1);
+  if (Number.isFinite(cached) && cached < state.pageStart) return cached;
+
   const chapterIndex = state.chapters.findLastIndex(chapter => chapter.start <= state.pageStart);
   const chapter = state.chapters[chapterIndex];
   if (!chapter) return null;
@@ -374,7 +392,16 @@ function previousPageStart() {
   // chapter. This is the only case in which Previous crosses a chapter border.
   if (state.pageStart === chapter.start) {
     if (chapterIndex === 0) return null;
-    return pageStartsForChapter(chapterIndex - 1).at(-1) ?? null;
+    const previousChapter = state.chapters[chapterIndex - 1];
+    let cursor = previousChapter.start;
+    let previous = cursor;
+    while (cursor < previousChapter.end) {
+      previous = cursor;
+      const next = fitCurrentPage(cursor);
+      if (next <= cursor) break;
+      cursor = next;
+    }
+    return previous;
   }
 
   // Recreate this chapter's stable page boundaries. This remains correct when
@@ -411,12 +438,13 @@ function renderChapters() {
     button.innerHTML = `<span>${String(i + 1).padStart(2, "0")}</span>`;
     button.append(document.createTextNode(chapter.title));
     button.addEventListener("click", () => {
-      // A menu jump has no navigation history. Its displayed page number is
-      // calculated from every real page preceding this chapter.
+      // A menu jump has no reusable navigation history. Estimate its page
+      // number from this layout instead of forcing every earlier page to fit.
       state.pageHistory = [];
       state.pageStart = chapter.start;
-      state.page = pageNumberForStart(state.pageStart);
       state.pageEnd = fitCurrentPage(state.pageStart);
+      const pageLength = Math.max(1, state.pageEnd - state.pageStart);
+      state.page = Math.max(1, Math.round(state.pageStart / pageLength) + 1);
       renderPage(); closePanels();
     });
     return button;
@@ -434,9 +462,8 @@ function turnPage(delta) {
     const previousStart = previousPageStart();
     if (previousStart === null) return;
     state.pageStart = previousStart;
-    // Keep persisted history consistent, but never use it to decide where the
-    // Previous button goes.
-    state.pageHistory = state.pageHistory.filter(start => start < previousStart);
+    // Consume the cached adjacent boundary when one was available.
+    state.pageHistory.pop();
     state.page = Math.max(1, state.page - 1);
   }
   state.pageEnd = fitCurrentPage(state.pageStart);
@@ -527,7 +554,7 @@ function repaginateFromCurrentPosition() {
   if (!state.current) return;
   state.current.progress = state.pageStart;
   state.current.pageHistory = [];
-  state.current.pageNumber = 1;
+  state.current.layoutKey = "";
   paginate(false);
 }
 
@@ -576,7 +603,10 @@ async function init() {
 
 // Start an IndexedDB write while the page is still alive. This covers app
 // updates, tab closes, and mobile browsers suspending the installed PWA.
-window.addEventListener("pagehide", () => { persistCurrentPosition().catch(console.error); });
+window.addEventListener("pagehide", () => { persistCurrentPosition(true).catch(console.error); });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") persistCurrentPosition(true).catch(console.error);
+});
 
 // Register immediately. Waiting until after the IndexedDB work above can miss
 // the load event on fast devices, leaving the app without an offline cache.
@@ -598,9 +628,13 @@ if ("serviceWorker" in navigator) {
 
   navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then(registration => {
     const checkForUpdate = () => {
-      if (navigator.onLine) registration.update().catch(error => {
+      const lastCheck = Number(localStorage.getItem("shiyue-update-check") || 0);
+      if (navigator.onLine && Date.now() - lastCheck > 6 * 60 * 60 * 1000) {
+        localStorage.setItem("shiyue-update-check", Date.now().toString());
+        registration.update().catch(error => {
         console.warn("无法检查应用更新", error);
-      });
+        });
+      }
     };
 
     checkForUpdate();
