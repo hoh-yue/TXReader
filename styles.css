@@ -88,8 +88,8 @@ button { cursor: pointer; }
 .section-label { margin: 26px 0 8px; color: var(--muted); font-family: system-ui, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .18em; }
 .chapter-section .section-label { flex: 0 0 auto; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
 .chapter-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-.chapter-list button { display: flex; width: 100%; gap: 12px; padding: 12px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; font-size: 13px; line-height: 1.45; content-visibility: auto; contain-intrinsic-size: auto 44px; }
-.chapter-list button span { color: var(--muted); font-family: system-ui, sans-serif; font-size: 10px; }
+.chapter-list button { display: flex; align-items: center; width: 100%; gap: 12px; padding: 12px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; font-size: 13px; line-height: 1.45; content-visibility: auto; contain-intrinsic-size: auto 44px; }
+.chapter-list button span { flex: 0 0 2.4em; color: var(--muted); font-family: system-ui, sans-serif; font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
 .chapter-list button.active { color: var(--accent); }
 .setting-block { padding: 22px 0; border-bottom: 1px solid var(--line); }
 .setting-block > label { display: block; margin-bottom: 15px; font-size: 14px; }

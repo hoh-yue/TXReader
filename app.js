@@ -19,12 +19,13 @@ const ui = {
 const saved = JSON.parse(localStorage.getItem(STATE_KEY) || "{}");
 const state = {
   books: [], current: null, page: 0, pages: [], chapters: [], chapterIndex: 0,
-  fontSize: saved.fontSize || 20, theme: saved.theme || "paper", encoding: saved.encoding || "auto",
+  fontSize: saved.fontSize || 20, theme: saved.theme || "night", encoding: saved.encoding || "auto",
   pageStart: 0, pageEnd: 0, pageHistory: [], layoutKey: ""
 };
 let resizeTimer;
 let progressSaveTimer;
 let progressSaveQueue = Promise.resolve();
+let isClearingData = false;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -67,6 +68,29 @@ async function deleteBook(id) {
     const tx = db.transaction([BOOK_STORE, PROGRESS_STORE], "readwrite");
     tx.objectStore(BOOK_STORE).delete(id);
     tx.objectStore(PROGRESS_STORE).delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function resetLibraryProgress() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([BOOK_STORE, PROGRESS_STORE], "readwrite");
+    tx.objectStore(PROGRESS_STORE).clear();
+    const request = tx.objectStore(BOOK_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      cursor.update({
+        ...cursor.value,
+        progress: 0,
+        pageHistory: [],
+        pageNumber: 1,
+        layoutKey: ""
+      });
+      cursor.continue();
+    };
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
@@ -432,10 +456,13 @@ async function removeBook(book) {
 }
 
 function renderChapters() {
+  let chapterNumber = 0;
   ui.chapterList.replaceChildren(...state.chapters.map((chapter, i) => {
+    if (!chapter.synthetic) chapterNumber++;
     const button = document.createElement("button");
     button.className = i === state.chapterIndex ? "active" : "";
-    button.innerHTML = `<span>${String(i + 1).padStart(2, "0")}</span>`;
+    const number = chapter.synthetic ? "—" : String(chapterNumber).padStart(2, "0");
+    button.innerHTML = `<span>${number}</span>`;
     button.append(document.createTextNode(chapter.title));
     button.addEventListener("click", () => {
       // A menu jump has no reusable navigation history. Estimate its page
@@ -501,19 +528,22 @@ function showToast(message) {
 }
 
 async function clearAppCache() {
-  if (!navigator.onLine) {
-    showToast("请联网后再刷新缓存");
-    return;
-  }
+  const confirmed = window.confirm("确定清除应用数据吗？\n\n所有书籍会保留，但阅读进度将重置到第一页。显示设置和离线缓存也会被清除。");
+  if (!confirmed) return;
+
   const button = $("clearCacheButton");
   button.disabled = true;
-  button.textContent = "正在刷新…";
+  button.textContent = "正在清除…";
+  isClearingData = true;
+  clearTimeout(progressSaveTimer);
   try {
     if ("caches" in window) {
       const keys = await caches.keys();
       await Promise.allSettled(keys.filter(key => key.startsWith("shiyue-")).map(key => caches.delete(key)));
     }
-    showToast("缓存已清除，正在重新载入");
+    localStorage.clear();
+    await resetLibraryProgress();
+    showToast("应用数据已清除，书籍已保留");
     setTimeout(() => {
       const refreshedUrl = new URL(window.location.href);
       refreshedUrl.searchParams.set("refresh", Date.now().toString());
@@ -521,9 +551,10 @@ async function clearAppCache() {
     }, 700);
   } catch (error) {
     console.error(error);
+    isClearingData = false;
     button.disabled = false;
-    button.textContent = "刷新应用缓存";
-    showToast("缓存刷新失败，请稍后重试");
+    button.textContent = "清除应用数据（保留书籍）";
+    showToast("数据清除失败，请关闭其他窗口后重试");
   }
 }
 
@@ -603,9 +634,11 @@ async function init() {
 
 // Start an IndexedDB write while the page is still alive. This covers app
 // updates, tab closes, and mobile browsers suspending the installed PWA.
-window.addEventListener("pagehide", () => { persistCurrentPosition(true).catch(console.error); });
+window.addEventListener("pagehide", () => {
+  if (!isClearingData) persistCurrentPosition(true).catch(console.error);
+});
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") persistCurrentPosition(true).catch(console.error);
+  if (!isClearingData && document.visibilityState === "hidden") persistCurrentPosition(true).catch(console.error);
 });
 
 // Register immediately. Waiting until after the IndexedDB work above can miss
