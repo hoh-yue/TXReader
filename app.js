@@ -214,8 +214,8 @@ function paginate(keepPosition = true) {
   const oldOffset = keepPosition ? state.pageStart : state.current.progress || 0;
   state.chapters = findChapters(state.current.text);
   state.pageHistory = Array.isArray(state.current.pageHistory) ? [...state.current.pageHistory] : [];
-  state.page = Number.isFinite(state.current.pageNumber) ? state.current.pageNumber : state.pageHistory.length + 1;
   state.pageStart = safeTextBoundary(state.current.text, oldOffset);
+  state.page = pageNumberForStart(state.pageStart);
   state.pageEnd = fitCurrentPage(state.pageStart);
   renderPage(false);
   renderChapters();
@@ -344,6 +344,27 @@ function pageStartsForChapter(index) {
   return starts;
 }
 
+function pageNumberForStart(target) {
+  let pageNumber = 1;
+
+  for (let index = 0; index < state.chapters.length; index++) {
+    const chapter = state.chapters[index];
+    if (target <= chapter.start) return pageNumber;
+
+    let cursor = chapter.start;
+    let safety = 0;
+    while (cursor < chapter.end && cursor < target && safety++ < state.current.text.length) {
+      const next = fitCurrentPage(cursor);
+      if (next <= cursor || next > target) return pageNumber;
+      cursor = next;
+      pageNumber++;
+      if (cursor === target) return pageNumber;
+    }
+  }
+
+  return pageNumber;
+}
+
 function previousPageStart() {
   const chapterIndex = state.chapters.findLastIndex(chapter => chapter.start <= state.pageStart);
   const chapter = state.chapters[chapterIndex];
@@ -390,11 +411,11 @@ function renderChapters() {
     button.innerHTML = `<span>${String(i + 1).padStart(2, "0")}</span>`;
     button.append(document.createTextNode(chapter.title));
     button.addEventListener("click", () => {
-      // A menu jump follows chapter order, not navigation history. From the
-      // opening of chapter 9, "上一页" should be the last page of chapter 8.
-      state.pageHistory = pageStartsForChapter(i - 1);
-      state.page = state.pageHistory.length + 1;
+      // A menu jump has no navigation history. Its displayed page number is
+      // calculated from every real page preceding this chapter.
+      state.pageHistory = [];
       state.pageStart = chapter.start;
+      state.page = pageNumberForStart(state.pageStart);
       state.pageEnd = fitCurrentPage(state.pageStart);
       renderPage(); closePanels();
     });
