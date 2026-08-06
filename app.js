@@ -581,6 +581,52 @@ ui.prev.addEventListener("click", () => turnPage(-1));
 ui.next.addEventListener("click", () => turnPage(1));
 $("tapPrevious").addEventListener("click", event => { event.stopPropagation(); turnPage(-1); });
 $("tapNext").addEventListener("click", event => { event.stopPropagation(); turnPage(1); });
+
+// Own horizontal gestures on the reading surface so mobile browsers do not
+// interpret an edge swipe as history navigation. Calling preventDefault from
+// touchstart also suppresses the synthetic click, so short taps are handled
+// here and mouse/keyboard clicks continue to use the listeners above.
+const readingView = $("readingView");
+let readerTouch = null;
+
+readingView.addEventListener("touchstart", event => {
+  if (!state.current || event.touches.length !== 1) {
+    readerTouch = null;
+    return;
+  }
+  const touch = event.touches[0];
+  readerTouch = { x: touch.clientX, y: touch.clientY };
+  event.preventDefault();
+}, { passive: false });
+
+readingView.addEventListener("touchmove", event => {
+  if (!readerTouch || event.touches.length !== 1) return;
+  event.preventDefault();
+}, { passive: false });
+
+readingView.addEventListener("touchend", event => {
+  if (!readerTouch || event.changedTouches.length !== 1) {
+    readerTouch = null;
+    return;
+  }
+
+  event.preventDefault();
+  const touch = event.changedTouches[0];
+  const deltaX = touch.clientX - readerTouch.x;
+  const deltaY = touch.clientY - readerTouch.y;
+  const swipeDistance = Math.min(72, Math.max(44, innerWidth * .12));
+
+  if (Math.abs(deltaX) >= swipeDistance && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) {
+    turnPage(deltaX < 0 ? 1 : -1);
+  } else if (Math.hypot(deltaX, deltaY) < 12) {
+    const tapPosition = touch.clientX / innerWidth;
+    if (tapPosition < .34) turnPage(-1);
+    else if (tapPosition > .66) turnPage(1);
+  }
+  readerTouch = null;
+}, { passive: false });
+
+readingView.addEventListener("touchcancel", () => { readerTouch = null; }, { passive: false });
 function repaginateFromCurrentPosition() {
   if (!state.current) return;
   state.current.progress = state.pageStart;
