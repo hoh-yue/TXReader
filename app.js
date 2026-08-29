@@ -79,7 +79,7 @@ async function getBooks() {
   return books.map(book => ({
     id: book.id,
     title: book.title,
-    textLength: book.text.length,
+    textLength: book.textLength,
     createdAt: book.createdAt,
     ...progressById.get(book.id)
   }));
