@@ -1097,23 +1097,6 @@ document.addEventListener("visibilitychange", () => {
 // Register immediately. Waiting until after the IndexedDB work above can miss
 // the load event on fast devices, leaving the app without an offline cache.
 if ("serviceWorker" in navigator) {
-  const wasControlled = Boolean(navigator.serviceWorker.controller);
-  let refreshing = false;
-
-  navigator.serviceWorker.addEventListener("controllerchange", async () => {
-    // A newly activated worker owns the page now. Reload once so the visible
-    // app also switches to the files that worker cached during installation.
-    if (wasControlled && !refreshing) {
-      refreshing = true;
-      try {
-        await persistCurrentPosition();
-      } catch (error) {
-        console.error("无法在应用更新前保存阅读位置", error);
-      }
-      window.location.reload();
-    }
-  });
-
   navigator.serviceWorker
     .register("./sw.js", { updateViaCache: "none" })
     .then((registration) => {
