@@ -1,3 +1,4 @@
+const APP_VERSION = "0.0.43";
 const DB_NAME = "shiyue-reader";
 const DB_VERSION = 2;
 const BOOK_STORE = "books";
@@ -22,7 +23,7 @@ const ui = {
   libraryButton: $("libraryButton"), contentsButton: $("contentsButton"), settingsButton: $("settingsButton"),
   tapPrevious: $("tapPrevious"), tapNext: $("tapNext"), fontDown: $("fontDown"), fontUp: $("fontUp"),
   themeChoices: $("themeChoices"), clearCacheButton: $("clearCacheButton"),
-  checkUpdateButton: $("checkUpdateButton"),
+  checkUpdateButton: $("checkUpdateButton"), appVersion: $("appVersion"),
   topbar: document.querySelector(".topbar"), themeColor: document.querySelector('meta[name="theme-color"]'),
   themeButtons: document.querySelectorAll("[data-theme]"), closeButtons: document.querySelectorAll("[data-close]")
 };
@@ -99,7 +100,7 @@ function getBookSummaries() {
         summaries.push({
           id: book.id,
           title: book.title,
-          textLength: book.text.length,
+          textLength: typeof book.text === "string" ? book.text.length : (book.textLength || 0),
           createdAt: book.createdAt
         });
         cursor.continue();
@@ -440,7 +441,7 @@ async function importFile(file) {
     showToast(existing ? "书籍已在书架中" : "已加入书架");
   } catch (error) {
     console.error(error);
-    showToast("文件读取失败，请检查编码");
+    showToast(`文件读取失败：${error?.message || "请检查编码或应用存储"}`);
   } finally { ui.fileInput.value = ""; }
 }
 
@@ -585,6 +586,7 @@ function closePanels() {
 function applySettings() {
   document.documentElement.dataset.theme = state.theme;
   document.documentElement.style.setProperty("--font-size", `${state.fontSize}px`);
+  ui.appVersion.textContent = APP_VERSION;
   ui.fontValue.textContent = state.fontSize;
   ui.encoding.value = state.encoding;
   ui.themeColor.content = THEME_COLORS[state.theme];
@@ -733,8 +735,8 @@ ui.checkUpdateButton.addEventListener("click", async () => {
   button.textContent = "正在检查…";
   try {
     await serviceWorkerRegistration.update();
-    button.textContent = "已是最新版本";
-    showToast("已是最新版本");
+    button.textContent = `已是最新版本 ${APP_VERSION}`;
+    showToast(`已是最新版本 ${APP_VERSION}`);
   } catch (error) {
     console.warn("无法检查应用更新", error);
     button.textContent = "检查失败，请重试";
