@@ -1,4 +1,3 @@
-const APP_VERSION = "0.0.44";
 const DB_NAME = "shiyue-reader";
 const APP_VERSION = "v42";
 const DB_VERSION = 2;
@@ -601,7 +600,18 @@ async function importFile(file) {
           updatedAt: Date.now(),
         };
     await saveBook(book);
-    state.books = (await getBooks()).map(restoreCheckpoint);
+    const summary = {
+      id: book.id,
+      title: book.title,
+      textLength: book.text.length,
+      createdAt: book.createdAt,
+      updatedAt: book.updatedAt || book.createdAt,
+      progress: Number.isFinite(book.progress) ? book.progress : 0,
+      pageHistory: Array.isArray(book.pageHistory) ? book.pageHistory : [],
+      pageNumber: Number.isFinite(book.pageNumber) ? book.pageNumber : 1,
+      layoutKey: book.layoutKey || "",
+    };
+    state.books = [summary, ...state.books.filter((item) => item.id !== book.id)].map(restoreCheckpoint);
     renderLibrary();
     showWelcome();
     showToast(existing ? "书籍已在书架中" : "已加入书架");
