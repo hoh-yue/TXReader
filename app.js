@@ -1,3 +1,4 @@
+const APP_VERSION = "0.0.43";
 const DB_NAME = "shiyue-reader";
 const APP_VERSION = "v42";
 const DB_VERSION = 2;
@@ -100,7 +101,7 @@ function getBookSummaries() {
         summaries.push({
           id: book.id,
           title: book.title,
-          textLength: book.text.length,
+          textLength: typeof book.text === "string" ? book.text.length : (book.textLength || 0),
           createdAt: book.createdAt
         });
         cursor.continue();
@@ -441,7 +442,7 @@ async function importFile(file) {
     showToast(existing ? "书籍已在书架中" : "已加入书架");
   } catch (error) {
     console.error(error);
-    showToast("文件读取失败，请检查编码");
+    showToast(`文件读取失败：${error?.message || "请检查编码或应用存储"}`);
   } finally { ui.fileInput.value = ""; }
 }
 
