@@ -1,5 +1,6 @@
 const APP_VERSION = "0.0.43";
 const DB_NAME = "shiyue-reader";
+const APP_VERSION = "v42";
 const DB_VERSION = 2;
 const BOOK_STORE = "books";
 const PROGRESS_STORE = "progress";
@@ -80,7 +81,7 @@ async function getBooks() {
   return books.map(book => ({
     id: book.id,
     title: book.title,
-    textLength: book.text.length,
+    textLength: book.textLength,
     createdAt: book.createdAt,
     ...progressById.get(book.id)
   }));
