@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiyue-v41";
+const CACHE_NAME = "shiyue-v42";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icons/icon.svg"];
 const ASSET_URLS = new Set(ASSETS.map(path => new URL(path, self.location.href).href));
 
