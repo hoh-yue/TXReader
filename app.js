@@ -22,6 +22,7 @@ const ui = {
   libraryButton: $("libraryButton"), contentsButton: $("contentsButton"), settingsButton: $("settingsButton"),
   tapPrevious: $("tapPrevious"), tapNext: $("tapNext"), fontDown: $("fontDown"), fontUp: $("fontUp"),
   themeChoices: $("themeChoices"), clearCacheButton: $("clearCacheButton"),
+  checkUpdateButton: $("checkUpdateButton"),
   topbar: document.querySelector(".topbar"), themeColor: document.querySelector('meta[name="theme-color"]'),
   themeButtons: document.querySelectorAll("[data-theme]"), closeButtons: document.querySelectorAll("[data-close]")
 };
@@ -36,6 +37,7 @@ let resizeTimer;
 let progressSaveTimer;
 let progressSaveQueue = Promise.resolve();
 let isClearingData = false;
+let serviceWorkerRegistration = null;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -381,7 +383,6 @@ async function importFile(file) {
     await saveBook(book);
     state.books = (await getBooks()).map(restoreCheckpoint);
     renderLibrary();
-    renderLibrary();
     showWelcome();
     showToast(existing ? "书籍已在书架中" : "已加入书架");
   } catch (error) {
@@ -656,6 +657,33 @@ ui.fontUp.addEventListener("click", () => { state.fontSize = Math.min(MAX_FONT_S
 ui.themeChoices.addEventListener("click", event => { if (!event.target.dataset.theme) return; state.theme = event.target.dataset.theme; applySettings(); });
 ui.encoding.addEventListener("change", () => { state.encoding = ui.encoding.value; persistSettings(); });
 ui.clearCacheButton.addEventListener("click", clearAppCache);
+ui.checkUpdateButton.addEventListener("click", async () => {
+  if (!serviceWorkerRegistration) {
+    showToast("离线服务尚未准备好");
+    return;
+  }
+  if (!navigator.onLine) {
+    showToast("当前处于离线状态，无法检查更新");
+    return;
+  }
+  const button = ui.checkUpdateButton;
+  button.disabled = true;
+  button.textContent = "正在检查…";
+  try {
+    await serviceWorkerRegistration.update();
+    button.textContent = "已是最新版本";
+    showToast("已是最新版本");
+  } catch (error) {
+    console.warn("无法检查应用更新", error);
+    button.textContent = "检查失败，请重试";
+    showToast("检查更新失败，请确认网络连接");
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = "检查更新";
+    }, 1800);
+  }
+});
 ui.reader.addEventListener("click", event => {
   if (!state.current) return;
   const x = event.clientX / innerWidth;
@@ -729,21 +757,7 @@ if ("serviceWorker" in navigator) {
   });
 
   navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then(registration => {
-    const checkForUpdate = () => {
-      const lastCheck = Number(localStorage.getItem("shiyue-update-check") || 0);
-      if (navigator.onLine && Date.now() - lastCheck > 6 * 60 * 60 * 1000) {
-        localStorage.setItem("shiyue-update-check", Date.now().toString());
-        registration.update().catch(error => {
-        console.warn("无法检查应用更新", error);
-        });
-      }
-    };
-
-    checkForUpdate();
-    window.addEventListener("online", checkForUpdate);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") checkForUpdate();
-    });
+    serviceWorkerRegistration = registration;
   }).catch(error => {
     console.error("无法启用离线模式", error);
   });
