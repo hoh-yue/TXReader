@@ -63,15 +63,58 @@ async function dbAction(storeName, mode, callback) {
   });
 }
 
-const getBookRecords = () => dbAction(BOOK_STORE, "readonly", store => store.getAll());
 const getProgressRecords = () => dbAction(PROGRESS_STORE, "readonly", store => store.getAll());
 const saveBook = (book) => dbAction(BOOK_STORE, "readwrite", store => store.put(book));
 const saveProgress = (progress) => dbAction(PROGRESS_STORE, "readwrite", store => store.put(progress));
 
+async function getBookRecord(id) {
+  return dbAction(BOOK_STORE, "readonly", store => store.get(id));
+}
+
 async function getBooks() {
-  const [books, progressRecords] = await Promise.all([getBookRecords(), getProgressRecords()]);
+  const [books, progressRecords] = await Promise.all([getBookSummaries(), getProgressRecords()]);
   const progressById = new Map(progressRecords.map(progress => [progress.id, progress]));
-  return books.map(book => ({ ...book, ...progressById.get(book.id) }));
+  // Keep only lightweight metadata in the shelf. Full text is loaded when a
+  // book is opened, which prevents several large books staying in memory.
+  return books.map(book => ({
+    id: book.id,
+    title: book.title,
+    textLength: book.text.length,
+    createdAt: book.createdAt,
+    ...progressById.get(book.id)
+  }));
+}
+
+function getBookSummaries() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const db = await openDB();
+      const tx = db.transaction(BOOK_STORE, "readonly");
+      const summaries = [];
+      const request = tx.objectStore(BOOK_STORE).openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const book = cursor.value;
+        summaries.push({
+          id: book.id,
+          title: book.title,
+          textLength: book.text.length,
+          createdAt: book.createdAt
+        });
+        cursor.continue();
+      };
+      tx.oncomplete = () => { db.close(); resolve(summaries); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    } catch (error) { reject(error); }
+  });
+}
+
+async function loadBookForReading(book) {
+  const [record, progressRecords] = await Promise.all([getBookRecord(book.id), getProgressRecords()]);
+  if (!record) throw new Error("找不到这本书");
+  const progress = progressRecords.find(item => item.id === book.id);
+  return { ...record, ...book, ...progress };
 }
 
 async function deleteBook(id) {
@@ -178,6 +221,14 @@ function persistCurrentPosition(immediate = false) {
   state.current.pageNumber = state.page;
   state.current.layoutKey = state.layoutKey;
   state.current.updatedAt = Date.now();
+  const summary = state.books.find(book => book.id === state.current.id);
+  if (summary) Object.assign(summary, {
+    progress: state.current.progress,
+    pageHistory: state.current.pageHistory,
+    pageNumber: state.current.pageNumber,
+    layoutKey: state.current.layoutKey,
+    updatedAt: state.current.updatedAt
+  });
   persistSettings();
   // localStorage is synchronous, so this small checkpoint survives abrupt
   // mobile-PWA termination even when the larger IndexedDB write does not.
@@ -357,6 +408,7 @@ function showWelcome() {
 }
 
 async function openBook(book) {
+  if (!book.text) book = await loadBookForReading(book);
   state.current = book;
   // Restore the persisted position synchronously. Pagination waits for the
   // reader to become visible, but lifecycle saves may run before that frame.
@@ -378,8 +430,9 @@ async function importFile(file) {
     if (!text) return showToast("这个文件没有可阅读的文字");
     const id = `${file.name}-${file.size}-${file.lastModified}`;
     const existing = state.books.find(book => book.id === id);
-    const book = existing || { id, title: file.name.replace(/\.txt$/i, ""), text, progress: 0, createdAt: Date.now(), updatedAt: Date.now() };
-    if (existing) book.text = text;
+    const book = existing
+      ? { ...await loadBookForReading(existing), text }
+      : { id, title: file.name.replace(/\.txt$/i, ""), text, progress: 0, createdAt: Date.now(), updatedAt: Date.now() };
     await saveBook(book);
     state.books = (await getBooks()).map(restoreCheckpoint);
     renderLibrary();
@@ -400,7 +453,7 @@ function renderLibrary() {
     button.className = `book-card${book.id === state.current?.id ? " active" : ""}`;
     button.innerHTML = `<strong></strong><small></small>`;
     button.querySelector("strong").textContent = book.title;
-    button.querySelector("small").textContent = `${Math.round((book.progress / Math.max(1, book.text.length)) * 100)}% · ${new Date(book.updatedAt).toLocaleDateString("zh-CN")}`;
+    button.querySelector("small").textContent = `${Math.round((book.progress / Math.max(1, book.textLength || 1)) * 100)}% · ${new Date(book.updatedAt).toLocaleDateString("zh-CN")}`;
     button.addEventListener("click", () => openBook(book));
     const remove = document.createElement("button");
     remove.className = "book-delete";
@@ -506,6 +559,15 @@ function turnPage(delta) {
   }
   state.pageEnd = fitCurrentPage(state.pageStart);
   renderPage();
+  animatePageTurn(delta);
+}
+
+function animatePageTurn(delta) {
+  const className = delta > 0 ? "slide-next" : "slide-previous";
+  ui.pageText.classList.remove("slide-next", "slide-previous");
+  // Force a reflow so consecutive quick swipes restart the animation.
+  void ui.pageText.offsetWidth;
+  ui.pageText.classList.add(className);
 }
 
 function openPanel(panel) {
