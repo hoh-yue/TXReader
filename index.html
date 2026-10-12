@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#242628" />
-    <meta name="description" content="一个轻巧、离线可用的中文 TXT 阅读器" />
+    <meta name="description" content="一个轻巧、离线可用的中文 TXT 阅读器与线上书城" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon.svg" />
@@ -21,6 +21,12 @@
           <strong id="bookTitle">拾页</strong>
           <span id="chapterTitle">你的随身中文阅读器</span>
         </div>
+        <nav id="homeNavTabs" class="home-nav-tabs">
+          <button id="tabShelf" class="nav-tab active" type="button">书架</button>
+          <!-- BOOKSTORE:START -->
+          <button id="tabStore" class="nav-tab" type="button">书城</button>
+          <!-- BOOKSTORE:END -->
+        </nav>
         <button class="icon-button" id="contentsButton" type="button" aria-label="打开目录" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
         </button>
@@ -32,7 +38,7 @@
       <main id="reader" class="reader" tabindex="0">
         <section id="welcome" class="welcome shelf-home">
           <div class="shelf-intro">
-            <div class="seal" aria-hidden="true">拾<br/>页</div>
+            <div id="homeSealLogo" class="seal" aria-hidden="true" style="cursor: pointer; user-select: none;">拾<br/>页</div>
             <div><p class="eyebrow">离线 · 私密 · 专注</p><h1>我的书架</h1></div>
           </div>
           <p class="welcome-copy">选择一本书继续阅读，所有进度只保存在你的设备中。</p>
@@ -45,6 +51,47 @@
           </div>
           <div id="homeBookList" class="home-book-list"></div>
         </section>
+
+        <!-- BOOKSTORE:START -->
+        <section id="bookstore" class="bookstore-view" hidden>
+          <div class="store-header">
+            <div class="search-bar-wrap">
+              <span class="search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+              </span>
+              <input id="storeSearchInput" type="search" placeholder="搜索书名、作者、类型..." aria-label="搜索小说" />
+              <button id="storeClearButton" class="search-clear-btn" type="button" aria-label="清空" hidden>×</button>
+              <button id="storeSearchButton" class="search-submit-btn" type="button">搜索</button>
+            </div>
+            <div class="hot-search-box">
+              <span class="hot-label">热门：</span>
+              <div id="storeHotTags" class="hot-tags-row"></div>
+            </div>
+            <div id="storeCategoryPills" class="category-pills-row">
+              <button class="cat-pill active" data-cat="all" type="button">推荐</button>
+              <button class="cat-pill" data-cat="玄幻" type="button">玄幻</button>
+              <button class="cat-pill" data-cat="仙侠" type="button">仙侠</button>
+              <button class="cat-pill" data-cat="武侠" type="button">武侠</button>
+              <button class="cat-pill" data-cat="奇幻" type="button">奇幻</button>
+              <button class="cat-pill" data-cat="科幻" type="button">科幻</button>
+              <button class="cat-pill" data-cat="都市" type="button">都市</button>
+            </div>
+          </div>
+
+          <div id="storeLoading" class="store-loading" hidden>
+            <div class="spinner"></div>
+            <span>正在检索小说库…</span>
+          </div>
+
+          <div id="storeEmpty" class="store-empty" hidden>
+            <span>空</span>
+            <strong>未找到相关小说</strong>
+            <small>请尝试更换关键词，或在设置中配置自定义 API 代理</small>
+          </div>
+
+          <div id="storeBookList" class="store-book-list"></div>
+        </section>
+        <!-- BOOKSTORE:END -->
 
         <article id="readingView" class="reading-view" hidden>
           <div id="pageText" class="page-text"></div>
@@ -112,19 +159,56 @@
         <p class="setting-note">若文字显示乱码，请切换编码后重新导入。</p>
       </section>
       <section class="setting-block">
+        <label for="bookstoreProxyInput">书城 API 代理地址（可选）</label>
+        <input id="bookstoreProxyInput" type="url" placeholder="如 https://my-proxy.com/?url=%s" />
+        <p class="setting-note">追书神器接口若遇浏览器跨域限制，可在此配置反向代理。留空则自动启用智能备用书库。</p>
+        <button id="saveProxyButton" class="settings-action" type="button" style="margin-top:8px;">保存代理设置</button>
+      </section>
+      <section class="setting-block">
         <label>应用存储</label>
         <button id="clearCacheButton" class="settings-action" type="button">清除应用数据（保留书籍）</button>
         <p class="setting-note">保留所有导入的书籍，但将阅读进度重置到第一页，并清除显示设置和离线缓存。</p>
       </section>
       <section class="setting-block">
         <label>应用更新</label>
-        <p class="setting-note">当前版本：<strong id="appVersion">v42</strong></p>
+        <p class="setting-note">当前版本：<strong id="appVersion">v44</strong></p>
         <button id="checkUpdateButton" class="settings-action" type="button">检查更新</button>
         <p class="setting-note">应用不会自动检查更新。联网后手动检查即可确认是否为最新版本。</p>
       </section>
     </aside>
 
+    <!-- BOOKSTORE:START -->
+    <div id="bookDetailModal" class="book-detail-modal" aria-hidden="true">
+      <div class="modal-card">
+        <button id="modalBtnClose" class="modal-close" type="button" aria-label="关闭">×</button>
+        <div class="modal-body">
+          <div class="modal-book-header">
+            <img id="modalBookCover" class="modal-cover" alt="封面" hidden />
+            <div class="modal-meta-box">
+              <h2 id="modalBookTitle">小说标题</h2>
+              <p id="modalBookAuthor" class="modal-author">作者</p>
+              <p id="modalBookCategory" class="modal-cat">分类</p>
+              <p id="modalBookFollower" class="modal-stat">人气统计</p>
+              <p id="modalBookLastChapter" class="modal-last-chapter">最新章节</p>
+            </div>
+          </div>
+          <div class="modal-intro-section">
+            <h4>内容简介</h4>
+            <p id="modalBookIntro" class="modal-intro">简介内容...</p>
+          </div>
+          <div class="modal-actions">
+            <button id="modalBtnAddShelf" class="modal-btn secondary" type="button">＋ 加入书架</button>
+            <button id="modalBtnReadNow" class="modal-btn primary" type="button">立即阅读</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- BOOKSTORE:END -->
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <!-- BOOKSTORE:START -->
+    <script src="./js/bookstore.js" defer></script>
+    <!-- BOOKSTORE:END -->
     <script src="./app.js" defer></script>
   </body>
 </html>
