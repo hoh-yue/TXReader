@@ -1,5 +1,5 @@
-const CACHE_NAME = "shiyue-v42";
-const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icons/icon.svg"];
+const CACHE_NAME = "shiyue-v43";
+const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./js/bookstore.js", "./manifest.webmanifest", "./icons/icon.svg"];
 const ASSET_URLS = new Set(ASSETS.map(path => new URL(path, self.location.href).href));
 
 self.addEventListener("install", event => {
