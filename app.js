@@ -1,5 +1,5 @@
 const DB_NAME = "shiyue-reader";
-const APP_VERSION = "v43";
+const APP_VERSION = "v44";
 const DB_VERSION = 2;
 const BOOK_STORE = "books";
 const PROGRESS_STORE = "progress";
@@ -147,17 +147,17 @@ async function getBooks() {
   );
   // Keep only lightweight metadata in the shelf. Full text is loaded when a
   // book is opened, which prevents several large books staying in memory.
-  return books.map((book) => ({
-    id: book.id,
-    title: book.title,
-    // getBookSummaries intentionally does not load the full text. Use the
-    // stored summary length so opening the app does not fail on every book.
-    textLength: Number.isFinite(book.textLength) ? book.textLength : 0,
-    createdAt: book.createdAt,
-    progress: 0,
-    updatedAt: book.createdAt || Date.now(),
-    ...progressById.get(book.id),
-  }));
+  return (books || [])
+    .filter(Boolean)
+    .map((book) => ({
+      id: book.id,
+      title: book.title || "无标题",
+      textLength: Number.isFinite(book.textLength) ? book.textLength : 0,
+      createdAt: book.createdAt || Date.now(),
+      progress: 0,
+      updatedAt: book.updatedAt || book.createdAt || Date.now(),
+      ...progressById.get(book.id),
+    }));
 }
 
 function getBookSummaries() {
@@ -171,15 +171,21 @@ function getBookSummaries() {
         const cursor = request.result;
         if (!cursor) return;
         const book = cursor.value;
-        summaries.push({
-          id: book.id,
-          title: book.title,
-          textLength:
+        if (book) {
+          const textLength =
             typeof book.text === "string"
               ? book.text.length
-              : book.textLength || 0,
-          createdAt: book.createdAt,
-        });
+              : typeof book.textLength === "number"
+                ? book.textLength
+                : 0;
+          summaries.push({
+            id: book.id,
+            title: book.title || "",
+            textLength,
+            createdAt: book.createdAt || Date.now(),
+            updatedAt: book.updatedAt || book.createdAt || Date.now(),
+          });
+        }
         cursor.continue();
       };
       tx.oncomplete = () => {
