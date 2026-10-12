@@ -22,8 +22,13 @@ button { cursor: pointer; }
 #libraryButton { grid-column: 1; }
 .topbar .book-heading { grid-column: 2; }
 #contentsButton { grid-column: 3; }
-#settingsButton { grid-column: 4; }
-.topbar.home-mode .book-heading { grid-column: 1 / 4; padding-left: 8px; text-align: left; }
+.topbar.home-mode { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.topbar.home-mode .book-heading { flex: 0 0 auto; padding-left: 4px; text-align: left; }
+.topbar.home-mode .home-nav-tabs { display: flex; align-items: center; gap: 3px; background: color-mix(in srgb, var(--line) 80%, transparent); padding: 3px; border-radius: 6px; }
+.topbar:not(.home-mode) .home-nav-tabs { display: none !important; }
+.nav-tab { border: 0; background: transparent; padding: 5px 14px; font-size: 13px; font-weight: 500; border-radius: 4px; color: var(--muted); transition: all .18s ease; }
+.nav-tab:hover { color: var(--text); }
+.nav-tab.active { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
 .icon-button, .close-button { width: 42px; height: 42px; border: 0; background: transparent; border-radius: 50%; display: grid; place-items: center; }
 .icon-button:active, .close-button:active { background: var(--line); }
 .icon-button svg { width: 23px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
@@ -140,3 +145,77 @@ select { width: 100%; height: 44px; padding: 0 10px; border: 1px solid var(--lin
   .page-text.slide-next, .page-text.slide-previous { animation: none; }
   .scrim { backdrop-filter: none; }
 }
+
+/* ==================== 书城视图样式 ==================== */
+.bookstore-view { height: 100%; padding: 20px 20px calc(30px + env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; }
+.store-header { max-width: 640px; margin: 0 auto 18px; }
+.search-bar-wrap { display: flex; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 4px 12px; gap: 8px; transition: border-color .2s; }
+.search-bar-wrap:focus-within { border-color: var(--accent); }
+.search-icon svg { width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+#storeSearchInput { flex: 1; border: 0; outline: none; background: transparent; color: var(--text); font-size: 14px; padding: 8px 0; }
+#storeSearchInput::placeholder { color: var(--muted); opacity: .7; }
+.search-clear-btn { border: 0; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; padding: 6px 8px; cursor: pointer; }
+.search-clear-btn:hover { color: var(--text); }
+.search-submit-btn { border: 0; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: opacity .15s; }
+.search-submit-btn:active { opacity: .85; }
+
+.hot-search-box { display: flex; align-items: center; gap: 8px; margin-top: 14px; overflow-x: auto; scrollbar-width: none; }
+.hot-search-box::-webkit-scrollbar { display: none; }
+.hot-label { flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
+.hot-tags-row { display: flex; gap: 6px; flex-wrap: nowrap; }
+.hot-tag-pill { flex-shrink: 0; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 60%, transparent); border-radius: 12px; padding: 4px 11px; font-size: 11px; color: var(--text); cursor: pointer; transition: all .15s; }
+.hot-tag-pill:hover, .hot-tag-pill:active { border-color: var(--accent); color: var(--accent); background: var(--surface); }
+
+.category-pills-row { display: flex; gap: 8px; margin-top: 12px; padding-bottom: 4px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); }
+.category-pills-row::-webkit-scrollbar { display: none; }
+.cat-pill { flex-shrink: 0; border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 6px 10px; border-bottom: 2px solid transparent; cursor: pointer; transition: all .15s; }
+.cat-pill:hover { color: var(--text); }
+.cat-pill.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+.store-loading, .store-empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; }
+.store-loading span, .store-empty small { margin-top: 8px; font-size: 12px; }
+.store-empty span { width: 56px; height: 70px; display: grid; place-items: center; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 4px; font-size: 22px; }
+.store-empty strong { color: var(--text); font-size: 15px; font-weight: 500; }
+
+.spinner { width: 26px; height: 26px; border: 2.5px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.store-book-list { max-width: 640px; margin: 14px auto 0; display: flex; flex-direction: column; gap: 12px; }
+.store-book-card { display: flex; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--surface) 75%, transparent); cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.store-book-card:hover { transform: translateY(-1px); border-color: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+.book-cover-box { flex-shrink: 0; width: 68px; height: 92px; border-radius: 5px; overflow: hidden; background: var(--surface); box-shadow: 0 3px 8px rgba(0,0,0,.15); }
+.book-cover-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fallback-cover { width: 100%; height: 100%; background: linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 70%, black)); color: #fff; display: flex; align-items: center; justify-content: center; padding: 4px; text-align: center; }
+.fallback-cover span { font-size: 13px; font-weight: 600; line-height: 1.3; writing-mode: vertical-rl; letter-spacing: .1em; }
+
+.book-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.book-title { margin: 0 0 5px; font-size: 15px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .02em; }
+.book-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.meta-author { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-tag { background: var(--line); padding: 1px 6px; border-radius: 3px; }
+.meta-pop { font-family: system-ui, sans-serif; }
+.book-desc { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ==================== 小说详情弹窗 ==================== */
+.book-detail-modal { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.5); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+.book-detail-modal.open { opacity: 1; pointer-events: auto; }
+.modal-card { width: min(100%, 480px); max-height: 85dvh; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: 0 16px 45px rgba(0,0,0,.35); position: relative; overflow-y: auto; overscroll-behavior: contain; }
+.modal-close { position: absolute; top: 12px; right: 14px; border: 0; background: transparent; font-size: 26px; font-weight: 200; color: var(--muted); cursor: pointer; line-height: 1; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; }
+.modal-close:hover { background: var(--line); color: var(--text); }
+.modal-book-header { display: flex; gap: 16px; margin-bottom: 18px; }
+.modal-cover { width: 84px; height: 112px; object-fit: cover; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.2); flex-shrink: 0; }
+.modal-meta-box { flex: 1; min-width: 0; }
+.modal-meta-box h2 { margin: 0 0 6px; font-size: 19px; font-weight: 600; color: var(--text); }
+.modal-meta-box p { margin: 3px 0; font-size: 12px; color: var(--muted); }
+.modal-last-chapter { color: var(--accent) !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-intro-section { margin: 16px 0 20px; }
+.modal-intro-section h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: .05em; }
+.modal-intro { margin: 0; font-size: 13px; line-height: 1.8; color: var(--text); max-height: 160px; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
+.modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.modal-btn { height: 42px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: 0; transition: opacity .15s, background-color .15s; }
+.modal-btn:disabled { opacity: .5; cursor: not-allowed; }
+.modal-btn.primary { background: var(--accent); color: #fff; }
+.modal-btn.primary:not(:disabled):hover { opacity: .9; }
+.modal-btn.secondary { background: transparent; border: 1px solid var(--line); color: var(--text); }
+.modal-btn.secondary:not(:disabled):hover { background: var(--line); }
+

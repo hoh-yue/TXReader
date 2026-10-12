@@ -1,5 +1,5 @@
 const DB_NAME = "shiyue-reader";
-const APP_VERSION = "v42";
+const APP_VERSION = "v43";
 const DB_VERSION = 2;
 const BOOK_STORE = "books";
 const PROGRESS_STORE = "progress";
@@ -16,10 +16,25 @@ const THEME_COLORS = {
   night: "#242628",
 };
 
+const STORE_DEV_KEY = "shiyue-store-dev-enabled";
+const isLocalEnv = () =>
+  ["localhost", "127.0.0.1"].includes(location.hostname) ||
+  location.hostname.endsWith(".local") ||
+  location.protocol === "file:";
+const isStoreEnabledLocally = () =>
+  isLocalEnv() && localStorage.getItem(STORE_DEV_KEY) === "true";
+
 const $ = (id) => document.getElementById(id);
 const ui = {
   fileInput: $("fileInput"),
   welcome: $("welcome"),
+  sealLogo: $("homeSealLogo"),
+  // BOOKSTORE:START
+  bookstore: $("bookstore"),
+  homeNavTabs: $("homeNavTabs"),
+  tabShelf: $("tabShelf"),
+  tabStore: $("tabStore"),
+  // BOOKSTORE:END
   readingView: $("readingView"),
   pageText: $("pageText"),
   footer: $("readingFooter"),
@@ -537,6 +552,7 @@ async function renderPage(save = true) {
 function showReader() {
   ui.topbar.classList.remove("home-mode");
   ui.welcome.hidden = true;
+  if (ui.bookstore) ui.bookstore.hidden = true;
   ui.readingView.hidden = false;
   ui.footer.hidden = false;
   ui.libraryButton.hidden = false;
@@ -547,7 +563,20 @@ function showWelcome() {
   ui.topbar.classList.add("home-mode");
   state.current = null;
   state.pageHistory = [];
-  ui.welcome.hidden = false;
+  if (
+    isLocalEnv() &&
+    !isStoreEnabledLocally() &&
+    window.bookstoreCtrl
+  ) {
+    ui.welcome.hidden = false;
+    if (ui.bookstore) ui.bookstore.hidden = true;
+  } else if (window.bookstoreCtrl && window.bookstoreCtrl.elements.tabStore?.classList.contains("active")) {
+    ui.welcome.hidden = true;
+    if (ui.bookstore) ui.bookstore.hidden = false;
+  } else {
+    ui.welcome.hidden = false;
+    if (ui.bookstore) ui.bookstore.hidden = true;
+  }
   ui.readingView.hidden = true;
   ui.footer.hidden = true;
   ui.libraryButton.hidden = true;
@@ -556,6 +585,37 @@ function showWelcome() {
   ui.chapterTitle.hidden = false;
   ui.chapterTitle.textContent = "你的随身中文阅读器";
   persistSettings();
+}
+
+
+async function addBookToShelf({ id, title, text }) {
+  const cleaned = cleanText(text);
+  const bookId = id || `store_${Date.now()}`;
+  const existing = state.books.find((b) => b.id === bookId || b.title === title);
+  const actualId = existing ? existing.id : bookId;
+  const book = {
+    id: actualId,
+    title,
+    text: cleaned,
+    progress: existing?.progress || 0,
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  };
+  await saveBook(book);
+  const summary = {
+    id: book.id,
+    title: book.title,
+    textLength: book.text.length,
+    createdAt: book.createdAt,
+    updatedAt: book.updatedAt,
+    progress: book.progress,
+    pageHistory: existing?.pageHistory || [],
+    pageNumber: existing?.pageNumber || 1,
+    layoutKey: existing?.layoutKey || "",
+  };
+  state.books = [summary, ...state.books.filter((item) => item.id !== actualId)].map(restoreCheckpoint);
+  renderLibrary();
+  return book;
 }
 
 async function openBook(book) {
@@ -1071,6 +1131,59 @@ function bindEvents() {
 
 async function init() {
   applySettings();
+  // BOOKSTORE:START
+  function syncBookstoreVisibility() {
+    const isVisible = !isLocalEnv() || isStoreEnabledLocally();
+    if (ui.tabStore) ui.tabStore.hidden = !isVisible;
+    if (ui.homeNavTabs) {
+      if (!isVisible) {
+        ui.homeNavTabs.style.display = "none";
+      } else {
+        ui.homeNavTabs.style.removeProperty("display");
+      }
+    }
+    if (!isVisible && ui.bookstore) {
+      ui.bookstore.hidden = true;
+      if (ui.welcome) ui.welcome.hidden = false;
+      if (ui.tabShelf) ui.tabShelf.classList.add("active");
+      if (ui.tabStore) ui.tabStore.classList.remove("active");
+    }
+  }
+
+  if (window.BookstoreController) {
+    window.bookstoreCtrl = new BookstoreController({
+      onAddBook: addBookToShelf,
+      onOpenBook: openBook,
+      showToast,
+    });
+    window.bookstoreCtrl.init();
+    syncBookstoreVisibility();
+
+    // 仅在本地环境下：支持连续点击 Logo 5 次切换书城开启/关闭
+    if (isLocalEnv()) {
+      let clickCount = 0;
+      let clickTimer = null;
+      const handleLogoClick = () => {
+        clickCount++;
+        clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => {
+          clickCount = 0;
+        }, 1500);
+
+        if (clickCount >= 5) {
+          clickCount = 0;
+          const nextState = !isStoreEnabledLocally();
+          localStorage.setItem(STORE_DEV_KEY, nextState ? "true" : "false");
+          syncBookstoreVisibility();
+          showToast(nextState ? "✨ 已开启本地书城模式" : "🔒 已隐藏本地书城");
+        }
+      };
+
+      if (ui.sealLogo) ui.sealLogo.addEventListener("click", handleLogoClick);
+      if (ui.bookTitle) ui.bookTitle.addEventListener("click", handleLogoClick);
+    }
+  }
+  // BOOKSTORE:END
   try {
     state.books = (await getBooks()).map(restoreCheckpoint);
     const lastBook = state.books.find((book) => book.id === saved.currentId);
