@@ -1,9 +1,15 @@
-const CACHE_NAME = "shiyue-v44";
+const CACHE_NAME = "shiyue-v45";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./js/bookstore.js", "./manifest.webmanifest", "./icons/icon.svg"];
 const ASSET_URLS = new Set(ASSETS.map(path => new URL(path, self.location.href).href));
 
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      return Promise.allSettled(
+        ASSETS.map(path => cache.add(path).catch(err => console.warn("Cache skip:", path, err)))
+      );
+    }).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", event => {

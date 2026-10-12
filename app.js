@@ -1,5 +1,5 @@
 const DB_NAME = "shiyue-reader";
-const APP_VERSION = "v44";
+const APP_VERSION = "v45";
 const DB_VERSION = 2;
 const BOOK_STORE = "books";
 const PROGRESS_STORE = "progress";
@@ -362,20 +362,81 @@ function persistCurrentPosition(immediate = false) {
 }
 
 function decodeFile(buffer) {
-  if (state.encoding !== "auto")
-    return new TextDecoder(state.encoding).decode(buffer);
-  const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
-  const bad = (utf8.match(/�/g) || []).length;
-  if (bad === 0) return utf8.replace(/^\uFEFF/, "");
-  try {
-    return new TextDecoder("gb18030").decode(buffer);
-  } catch {
-    return utf8;
+  const bytes = new Uint8Array(buffer);
+  if (!bytes.length) return "";
+
+  // 1. 检查常见 Byte Order Mark (BOM)
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder("utf-8").decode(buffer.slice(3));
   }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder("utf-16le").decode(buffer.slice(2));
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder("utf-16be").decode(buffer.slice(2));
+  }
+
+  // 2. 如果用户在设置中显式指定了文本编码，优先使用
+  if (state.encoding && state.encoding !== "auto") {
+    try {
+      return new TextDecoder(state.encoding).decode(buffer);
+    } catch (err) {
+      console.warn("指定编码解码失败，切换为自动识别", err);
+    }
+  }
+
+  // 3. 严格检测是否为合法 UTF-8 编码
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {}
+
+  // 4. 严格检测是否为合法 GB18030 / GBK 编码
+  for (const label of ["gb18030", "gbk"]) {
+    try {
+      return new TextDecoder(label, { fatal: true }).decode(buffer);
+    } catch {}
+  }
+
+  // 5. 若均包含少量异常字节，对比 UTF-8 与 GB18030 的乱码替换符数量，选择质量更高者
+  let utf8Text = "";
+  let gbText = "";
+  let utf8Bad = Infinity;
+  let gbBad = Infinity;
+
+  try {
+    utf8Text = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+    let count = 0;
+    for (let i = 0; i < utf8Text.length; i++) {
+      if (utf8Text.charCodeAt(i) === 0xfffd) count++;
+    }
+    utf8Bad = count;
+  } catch {}
+
+  for (const label of ["gb18030", "gbk"]) {
+    try {
+      gbText = new TextDecoder(label, { fatal: false }).decode(buffer);
+      let count = 0;
+      for (let i = 0; i < gbText.length; i++) {
+        if (gbText.charCodeAt(i) === 0xfffd) count++;
+      }
+      gbBad = count;
+      break;
+    } catch {}
+  }
+
+  if (utf8Bad <= gbBad && utf8Text) {
+    return utf8Text;
+  }
+  if (gbText) {
+    return gbText;
+  }
+  return utf8Text || "";
 }
 
 function cleanText(text) {
+  if (typeof text !== "string") return "";
   return text
+    .replace(/\0/g, "")
     .replace(/\r\n?/g, "\n")
     .replace(/\t/g, "　　")
     .replace(/\n{4,}/g, "\n\n\n")
@@ -603,6 +664,7 @@ async function addBookToShelf({ id, title, text }) {
     id: actualId,
     title,
     text: cleaned,
+    textLength: cleaned.length,
     progress: existing?.progress || 0,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
@@ -651,38 +713,50 @@ async function importFile(file) {
   if (!file.name.toLowerCase().endsWith(".txt"))
     return showToast("请选择 TXT 文件");
   try {
-    const text = cleanText(decodeFile(await file.arrayBuffer()));
+    const buffer = await file.arrayBuffer();
+    const text = cleanText(decodeFile(buffer));
     if (!text) return showToast("这个文件没有可阅读的文字");
     const id = `${file.name}-${file.size}-${file.lastModified}`;
     const existing = state.books.find((book) => book.id === id);
-    const book = existing
-      ? { ...(await loadBookForReading(existing)), text }
-      : {
-          id,
-          title: file.name.replace(/\.txt$/i, ""),
-          text,
-          progress: 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+    let existingRecord = null;
+    if (existing) {
+      try {
+        existingRecord = await getBookRecord(existing.id);
+      } catch (err) {
+        console.warn("读取旧书籍记录失败", err);
+      }
+    }
+    const title = file.name.replace(/\.txt$/i, "").trim() || "无标题";
+    const book = {
+      id,
+      title,
+      text,
+      textLength: text.length,
+      progress: Number.isFinite(existing?.progress) ? existing.progress : 0,
+      pageHistory: Array.isArray(existing?.pageHistory) ? existing.pageHistory : [],
+      pageNumber: Number.isFinite(existing?.pageNumber) ? existing.pageNumber : 1,
+      layoutKey: existing?.layoutKey || "",
+      createdAt: existing?.createdAt || existingRecord?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    };
     await saveBook(book);
     const summary = {
       id: book.id,
       title: book.title,
-      textLength: book.text.length,
+      textLength: book.textLength,
       createdAt: book.createdAt,
-      updatedAt: book.updatedAt || book.createdAt,
-      progress: Number.isFinite(book.progress) ? book.progress : 0,
-      pageHistory: Array.isArray(book.pageHistory) ? book.pageHistory : [],
-      pageNumber: Number.isFinite(book.pageNumber) ? book.pageNumber : 1,
-      layoutKey: book.layoutKey || "",
+      updatedAt: book.updatedAt,
+      progress: book.progress,
+      pageHistory: book.pageHistory,
+      pageNumber: book.pageNumber,
+      layoutKey: book.layoutKey,
     };
     state.books = [summary, ...state.books.filter((item) => item.id !== book.id)].map(restoreCheckpoint);
     renderLibrary();
     showWelcome();
-    showToast(existing ? "书籍已在书架中" : "已加入书架");
+    showToast(existing ? "书籍已重新载入书架" : "已加入书架");
   } catch (error) {
-    console.error(error);
+    console.error("导入书籍失败:", error);
     showToast(`文件读取失败：${error?.message || "请检查编码或应用存储"}`);
   } finally {
     ui.fileInput.value = "";
