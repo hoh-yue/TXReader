@@ -18,7 +18,7 @@ button, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
 .app-shell { width: 100%; height: 100dvh; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--bg); transition: background .25s, color .25s; }
-.topbar { height: calc(64px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0; display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px 44px; align-items: center; border-bottom: 1px solid var(--line); }
+.topbar { height: calc(64px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0; display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px 44px; align-items: center; border-bottom: 1px solid var(--line); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; transform: translateZ(0); }
 #libraryButton { grid-column: 1; }
 .topbar .book-heading { grid-column: 2; }
 #contentsButton { grid-column: 3; }
@@ -79,7 +79,7 @@ button { cursor: pointer; }
 .progress-track { height: 2px; margin-top: 8px; background: var(--line); }
 .progress-track i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 
-.scrim { position: fixed; inset: 0; z-index: 10; background: rgba(25,22,18,.42); backdrop-filter: blur(2px); }
+.scrim { position: fixed; inset: 0; z-index: 10; background: rgba(25,22,18,.42); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
 .panel { position: fixed; z-index: 11; top: 0; bottom: 0; width: min(88vw, 380px); padding: calc(22px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); overflow-y: auto; background: var(--surface); box-shadow: 0 0 45px rgba(28,23,18,.18); transition: transform .25s ease; }
 .panel-left { left: 0; transform: translateX(-105%); }
 .panel-right { right: 0; transform: translateX(105%); }
@@ -197,8 +197,8 @@ select { width: 100%; height: 44px; padding: 0 10px; border: 1px solid var(--lin
 .book-desc { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* ==================== 小说详情弹窗 ==================== */
-.book-detail-modal { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.5); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; pointer-events: none; transition: opacity .2s ease; }
-.book-detail-modal.open { opacity: 1; pointer-events: auto; }
+.book-detail-modal { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease, visibility .2s ease; }
+.book-detail-modal.open { opacity: 1; visibility: visible; pointer-events: auto; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .modal-card { width: min(100%, 480px); max-height: 85dvh; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: 0 16px 45px rgba(0,0,0,.35); position: relative; overflow-y: auto; overscroll-behavior: contain; }
 .modal-close { position: absolute; top: 12px; right: 14px; border: 0; background: transparent; font-size: 26px; font-weight: 200; color: var(--muted); cursor: pointer; line-height: 1; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; }
 .modal-close:hover { background: var(--line); color: var(--text); }
